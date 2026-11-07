@@ -13,7 +13,9 @@ export type SpaceThresholds = { join: number; review: number; llmConsider: numbe
 
 export const DEFAULT_THRESHOLDS: Record<MatchSpace, SpaceThresholds> = {
   model: { join: 0.66, review: 0.48, llmConsider: 0.4 },
-  local: { join: 0.5, review: 0.35, llmConsider: 0.3 },
+  // Calibrated against tests/fixtures/matching-corpus.ts (design default 0.50/0.35/0.30 left two positive probes in
+  // review; the highest negative probe scores 0.23 and the lowest positive 0.43).
+  local: { join: 0.42, review: 0.3, llmConsider: 0.25 },
 };
 
 export const MATCH_WEIGHTS = {

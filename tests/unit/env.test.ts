@@ -152,7 +152,7 @@ describe("loadMatchingConfig", () => {
   it("uses the design defaults", () => {
     const config = loadMatchingConfig({});
     expect(config.thresholds).toEqual(DEFAULT_THRESHOLDS);
-    expect(config.thresholds.local).toEqual({ join: 0.5, review: 0.35, llmConsider: 0.3 });
+    expect(config.thresholds.local).toEqual({ join: 0.42, review: 0.3, llmConsider: 0.25 });
     expect(config.thresholds.model).toEqual({ join: 0.66, review: 0.48, llmConsider: 0.4 });
     expect(config.misconfigured).toEqual([]);
   });

@@ -80,6 +80,24 @@ export function chooseSpace(requestHasModelEmbedding: boolean, coveredCount: num
   return requestHasModelEmbedding && coveredCount === totalCount ? "model" : "local";
 }
 
+/**
+ * Step 2: merges `match_clusters` (centroid hits) and `match_requests` (member hits) into per-cluster similarities.
+ * A cluster reached only through a member request gets `centroidSim = 0`.
+ */
+export function assembleCandidates(
+  clusterHits: readonly { clusterId: string; similarity: number }[],
+  requestHits: readonly { clusterId: string; similarity: number }[],
+): Map<string, CandidateSims> {
+  const out = new Map<string, CandidateSims>();
+  for (const hit of clusterHits) out.set(hit.clusterId, { centroidSim: hit.similarity, maxMemberSim: 0 });
+  for (const hit of requestHits) {
+    const current = out.get(hit.clusterId) ?? { centroidSim: 0, maxMemberSim: 0 };
+    current.maxMemberSim = Math.max(current.maxMemberSim, hit.similarity);
+    out.set(hit.clusterId, current);
+  }
+  return out;
+}
+
 export function bandFor(hybrid: number, thresholds: SpaceThresholds): Band {
   if (hybrid >= thresholds.join) return "join";
   if (hybrid >= thresholds.review) return "review";

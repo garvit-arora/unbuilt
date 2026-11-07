@@ -89,3 +89,19 @@ test("demo mode shows the three demo-account buttons", async ({ page }) => {
     await expect(page.getByRole("button", { name: `Sign in as demo ${role}` })).toBeVisible();
   }
 });
+
+// Requires `npm run seed` (the three documented demo accounts).
+for (const demo of [
+  { role: "buyer", name: "Demo Buyer", label: "Buyer" },
+  { role: "builder", name: "UNBUILT Labs", label: "Builder" },
+  { role: "admin", name: "Demo Admin", label: "Admin" },
+]) {
+  test(`"Sign in as demo ${demo.role}" signs in through Supabase Auth`, async ({ page }) => {
+    await page.goto("/auth");
+    await page.getByRole("button", { name: `Sign in as demo ${demo.role}` }).click();
+    await expect(page).toHaveURL((url) => url.pathname === "/");
+    const menu = page.getByTestId("user-menu-trigger");
+    await expect(menu).toContainText(demo.name);
+    await expect(menu).toContainText(demo.label);
+  });
+}

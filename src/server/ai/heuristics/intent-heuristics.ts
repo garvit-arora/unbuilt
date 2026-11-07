@@ -19,19 +19,19 @@ const TAG_PATTERNS: [ConstraintTag, RegExp][] = [
     "deployment_offline",
     /\b(offline|off-line|without (an |any )?internet( connection)?|no internet|air[- ]?gapped|on[- ]device|runs? (entirely |completely |fully )?locally|local (llms?|models?)|locally[- ]run)\b/,
   ],
-  ["deployment_local_first", /\blocal[- ]first\b/],
-  ["deployment_self_hosted", /\bself[- ]hosted?\b|\bon[- ]prem(ise)?s?\b|\bhost (it )?(myself|ourselves|on (my|our) own servers?)\b/],
+  ["deployment_local_first", /\blocal[- ]first\b|\b(stored|stores|kept|lives?) (locally|on (my|the|our) (own )?(device|machine|laptop|computer))\b/],
+  ["deployment_self_hosted", /\bself[- ]host(ed|ing|able)?\b|\bon[- ]prem(ise)?s?\b|\bhost (it )?(myself|ourselves|on (my|our) own servers?)\b/],
   ["deployment_cloud_only", /\b(cloud[- ]only|only in the cloud|saas|(?<!self[- ])hosted (service|app|platform))\b/],
   [
     "privacy_no_data_upload",
-    /\b((not|doesn'?t|don'?t|never|won'?t) (upload|send)s?|without (uploading|sending)|no cloud|privately|private (code|data|files|notes|documents)|privacy|never leaves? (my|the|our) (device|machine|laptop|network|servers?)|stays? on (my|the|our) (device|machine|laptop|servers?))\b/,
+    /\b((not|doesn'?t|don'?t|never|won'?t) (upload|send)s?|without (uploading|sending)|no cloud|privately|private (code|data|files|notes|documents)|privacy|never leaves? (my|the|our) (device|machine|laptop|network|servers?)|stays? on (my|the|our) (device|machine|laptop|servers?)|keeps? (my|our|the) \w+ private)\b/,
   ],
   ["collaboration_realtime", /\b(real[- ]?time|multiplayer|collaborative|team editing|pair[- ]programming|co-?edit(ing)?)\b/],
   [
     "pricing_no_subscription",
     /\b(no subscriptions?|without (a )?subscription|one[- ]time (purchase|payment|price|fee)|pay once|buy once|(doesn'?t|didn'?t|don'?t|wouldn'?t|not) require (a |an )?(\$\d+ )?(monthly |yearly |annual )?subscription)\b/,
   ],
-  ["pricing_free", /\bfree\b(?![- ](tier|trial))/],
+  ["pricing_free", /(?<![\w-])free\b(?![- ](tier|trial))/],
   ["pricing_low_cost", /\b(cheap|affordable|inexpensive|low[- ]cost|budget[- ]friendly)\b/],
   ["open_source", /\bopen[- ]source\b|\bfoss\b|\bmit[- ]licen[cs]ed\b/],
   ["platform_desktop", /\b(desktop app|desktop application|on (my|the) desktop|windows app|mac app|macos app|linux app)\b/],
@@ -61,7 +61,7 @@ const CATEGORY_PATTERNS: [Category, RegExp][] = [
     "developer_tools",
     /\b(cod(e|es|ing|er|ers)|developers?|programming|programmers?|ide|ides|editor|debug(ging)?|github|git|compilers?|refactor(ing)?|devops|documentation|docs|readmes?|repos?|repositor(y|ies)|codebases?|cobol|legacy (code|software|systems?|apps?)|pull requests?|api|apis|terminal|vs ?code|cursor|copilot)\b/g,
   ],
-  ["design", /\b(design(s|ers?)?|figma|mockups?|wireframes?|ui|ux|whiteboards?|prototypes?|sketch(es)?|diagrams?|canvas)\b/g],
+  ["design", /\b(design(s|ers?)?|figma|miro|mockups?|wireframes?|ui|ux|whiteboards?|boards?|brainstorm(s|ing)?|prototypes?|sketch(es)?|diagrams?|canvas)\b/g],
   ["education", /\b(learn(ing)?|tutor(ing|s)?|teach(ing|er|ers)?|students?|courses?|lessons?|study|studying|education|beginners?)\b/g],
   [
     "business_tools",
@@ -69,7 +69,7 @@ const CATEGORY_PATTERNS: [Category, RegExp][] = [
   ],
   [
     "productivity",
-    /\b(notes?|note-taking|knowledge|second brain|todos?|to-dos?|tasks?|calendars?|meetings?|emails?|inbox|productivity|automat(e|es|ion|ions)|workflows?|bookmarks?|personal (files|documents)|routines?)\b/g,
+    /\b(notes?|note-taking|knowledge|second brain|todos?|to-dos?|tasks?|calendars?|meetings?|emails?|inbox|productivity|automat(e|es|ion|ions)|workflows?|bookmarks?|personal (files|documents)|routines?|calls?|zoom|transcri(be|bed|bes|ption|ptions)|summar(y|ies|ize|ized)|recordings?)\b/g,
   ],
   ["browser_extensions", /\b(browser extension|chrome extension|firefox add-?on|extensions?)\b/g],
   ["mobile_apps", /\b(mobile apps?|iphone|android|ios|phone apps?)\b/g],
@@ -124,7 +124,7 @@ const GENERAL_STOP = new Set(
 
 const TRIGGER_RE = /\b(want|wish|need|looking for|would love)\b/i;
 const SPLIT_RE = /\b(?:that|which|and|with)\b|[,;]/i;
-const LEADING_AUX_RE = /^(?:(?:it|that|to|can|should|must|will|also|is|are|be)\s+)+/i;
+const LEADING_AUX_RE = /^(?:(?:i|we|it|that|to|can|should|must|will|also|is|are|be)\s+)+/i;
 
 function normalizeQuotes(text: string): string {
   return text.replace(/[’‘`]/g, "'");
