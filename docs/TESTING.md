@@ -86,7 +86,7 @@ $env:PLAYWRIGHT_PAYPAL_BUYER_PASSWORD="<sandbox personal password>"
 npx playwright test e2e/paypal-sandbox.spec.ts --project=desktop
 ```
 
-Without those variables the spec reports as skipped. PayPal may change its popup or ask for extra verification, so the manual script stays the reference.
+Without `PLAYWRIGHT_PAYPAL_BASE_URL`, `PLAYWRIGHT_PAYPAL_BUYER_EMAIL` and `PLAYWRIGHT_PAYPAL_BUYER_PASSWORD` the spec reports as skipped. PayPal may change its popup or ask for extra verification, so the manual script stays the reference.
 
 ## Troubleshooting
 

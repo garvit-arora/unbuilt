@@ -134,17 +134,20 @@ Scene-by-scene instructions and the < 3 minute video script: [docs/DEMO_WALKTHRO
 
 ## Roadmap
 
-P0 and P1 are implemented (see [PROGRESS.md](PROGRESS.md)). **P2 is documented only, not built**, because partial P2 screens would mean unfinished buttons in the product:
+P0 and P1 are implemented (see [PROGRESS.md](PROGRESS.md)). **P2 is documented only, not built**, because partial P2 screens would mean unfinished buttons in the product.
 
-- continuous public research for market gaps (a pluggable research provider for the Market Gap Researcher),
-- trend analysis and forecasting,
-- email notifications,
-- advanced fraud models,
-- PayPal multiparty seller onboarding, so builders get paid directly,
-- recurring billing,
-- international currencies.
+Where each P2 item would plug in is described in [docs/ARCHITECTURE.md › Extension points](docs/ARCHITECTURE.md#9-extension-points-p2-documented-only).
 
-Where each would plug in is described in [docs/ARCHITECTURE.md › Extension points](docs/ARCHITECTURE.md#9-extension-points-p2-documented-only).
+| Feature | Description | Status |
+|---|---|---|
+| External research provider | Pluggable `ResearchProvider` interface for Agent 3 (Market Gap Researcher) to query real external sources; results stored as `evidence_sources(source_type='external_research')`. | Planned (P2 - not implemented) |
+| Trend analysis | New pure modules reading `cluster_events` to compute demand trends over time; output must be labelled **Estimate**. | Planned (P2 - not implemented) |
+| Email notifications | A second channel inside `notification.service`; in-app rows already carry the title, body and href fields needed. | Planned (P2 - not implemented) |
+| Advanced fraud detection | Additional deterministic and ML checks in `integrity-analyst.ts`; they open flags only, never auto-action. | Planned (P2 - not implemented) |
+| Multiparty seller onboarding | PayPal multiparty payments so builders are paid directly; `buildOrderBody` already throws a `'seller'`-merchant error as the extension point. | Planned (P2 - not implemented) |
+| Recurring billing | A new offer type plus PayPal Subscriptions; the current payment state machine handles one-time captures only. | Planned (P2 - not implemented) |
+| International currencies | `PAYPAL_CURRENCY` currently accepts only USD; amounts are already integer minor units, so adding currencies is a config and UI change. | Planned (P2 - not implemented) |
+| Demand forecasting | Time-series analysis of cluster growth curves to project future demand; output must be labelled **Estimate**. | Planned (P2 - not implemented) |
 ## License
 
 MIT, see [LICENSE](LICENSE).
