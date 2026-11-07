@@ -1,13 +1,12 @@
-import { BadgeCheck } from "lucide-react";
 import Link from "next/link";
+import { BuildUpdates } from "@/components/builder/build-updates";
+import { ComparisonTable } from "@/components/builder/comparison-table";
 import { SubmitProposalDialog } from "@/components/builder/submit-proposal-dialog";
-import { DemoChip } from "@/components/layout/labels";
-import { formatDate } from "@/lib/format";
-import { label, OFFER_STATUS_LABELS, OFFER_TYPE_LABELS, PROPOSAL_STATUS_LABELS, VERIFICATION_LABELS } from "@/lib/labels";
+import { label, OFFER_STATUS_LABELS, OFFER_TYPE_LABELS } from "@/lib/labels";
 import { formatCentsShort } from "@/lib/money";
 import type { ClusterDetail } from "@/server/services/cluster-detail.service";
 
-/** Builders tab (P0, design 10): every non-withdrawn proposal, newest first, plus published offers. */
+/** Builders tab (design 10): proposals compared side by side (P1-7), the build-updates feed and published offers. */
 export function BuildersPanel({ detail }: { detail: ClusterDetail }) {
   const { cluster, proposals, offers, viewer } = detail;
   const canPropose = viewer.role === "builder" || viewer.role === "admin";
@@ -37,37 +36,15 @@ export function BuildersPanel({ detail }: { detail: ClusterDetail }) {
         {proposals.length === 0 ? (
           <p className="text-sm text-muted-text">No builder has proposed yet.</p>
         ) : (
-          <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface" data-testid="proposal-list">
-            {proposals.map((p) => (
-              <li key={p.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between" data-testid="proposal-item">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link href={`/proposals/${p.id}`} className="text-sm font-medium text-foreground hover:text-lime">
-                      {p.title}
-                    </Link>
-                    {p.verificationStatus === "verified" ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-lime">
-                        <BadgeCheck className="size-3.5" aria-hidden />
-                        {VERIFICATION_LABELS.verified}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-text">{label(VERIFICATION_LABELS, p.verificationStatus)}</span>
-                    )}
-                    {p.isDemo ? <DemoChip /> : null}
-                  </div>
-                  <div className="text-xs text-muted-text">
-                    by {p.builderName} · {formatDate(p.createdAt)}
-                    {p.timeline ? ` · ${p.timeline}` : ""}
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-3 text-xs">
-                  {p.proposedPriceCents ? <span className="font-mono text-foreground">{formatCentsShort(p.proposedPriceCents)}</span> : null}
-                  <span className="rounded-full border border-line px-2 py-0.5 text-muted-text">{label(PROPOSAL_STATUS_LABELS, p.status)}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <ComparisonTable proposals={proposals} />
         )}
+      </section>
+
+      <section aria-labelledby="build-updates" className="flex flex-col gap-3">
+        <h2 id="build-updates" className="text-lg font-medium text-foreground">
+          Build updates
+        </h2>
+        <BuildUpdates updates={detail.buildUpdates} showProposal empty="No builder has posted an update for this demand yet." />
       </section>
 
       <section aria-labelledby="offers" className="flex flex-col gap-3">

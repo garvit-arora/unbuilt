@@ -128,6 +128,37 @@ export type OfferCreate = z.output<typeof OfferCreateSchema>;
 export type OfferPatchInput = z.output<typeof OfferPatchSchema>;
 export type OpportunitiesQuery = z.output<typeof OpportunitiesQuerySchema>;
 
+export const REVIEW_BODY_MAX = 2000;
+
+/** `POST /api/products/[id]/reviews` (design 10 P1-7): rating 1–5, optional text. */
+export const ReviewSchema = z
+  .object({
+    rating: z.number().int().min(1, "Pick 1 to 5 stars.").max(5, "Pick 1 to 5 stars."),
+    body: z.string().trim().max(REVIEW_BODY_MAX).optional(),
+  })
+  .strict();
+export type ReviewInput = z.output<typeof ReviewSchema>;
+
+export const SCREENSHOT_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+export const SCREENSHOT_MAX_BYTES = 2 * 1024 * 1024;
+export const SCREENSHOT_MAX_COUNT = 6;
+
+/**
+ * `POST /api/products/[id]/screenshots`. The file travels as base64 inside JSON so the route keeps the JSON-only CSRF
+ * guard (design 6.3); the server decodes it and checks the real size and the file signature.
+ */
+export const ScreenshotUploadSchema = z
+  .object({
+    contentType: z.enum(SCREENSHOT_TYPES),
+    data: z
+      .string()
+      .min(16)
+      .max(Math.ceil((SCREENSHOT_MAX_BYTES * 4) / 3) + 8, "Screenshots must be 2 MB or smaller.")
+      .regex(/^[A-Za-z0-9+/]+={0,2}$/, "Invalid file encoding."),
+  })
+  .strict();
+export type ScreenshotUpload = z.output<typeof ScreenshotUploadSchema>;
+
 /** Lenient page parse of the opportunities filters (invalid fields are dropped). */
 export function parseOpportunityParams(raw: Record<string, string | string[] | undefined>): OpportunitiesQuery {
   const out: Record<string, unknown> = {};

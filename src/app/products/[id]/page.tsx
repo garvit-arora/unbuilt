@@ -2,14 +2,18 @@ import { Check, ExternalLink } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ScreenshotUpload } from "@/components/builder/screenshot-upload";
 import { CheckoutPanel } from "@/components/checkout/checkout-panel";
+import { ReviewsSection } from "@/components/checkout/reviews-section";
 import { DemoChip } from "@/components/layout/labels";
 import { formatDate } from "@/lib/format";
 import { label, OFFER_STATUS_LABELS, OFFER_TYPE_LABELS } from "@/lib/labels";
 import { formatCents } from "@/lib/money";
 import { UUID_RE } from "@/lib/schemas/demand";
 import { getOptionalSessionUser } from "@/server/auth/guards";
+import { listScreenshots } from "@/server/services/media.service";
 import { getPublicOffer } from "@/server/services/offer.service";
+import { reviewService } from "@/server/services/review.service";
 
 export const metadata: Metadata = { title: "Product" };
 
@@ -27,6 +31,12 @@ export default async function ProductPage({
   const viewer = await getOptionalSessionUser();
   const offer = await getPublicOffer(id, viewer);
   if (!offer) notFound();
+  const [reviews, reviewViewer, screenshots] = await Promise.all([
+    reviewService.forOffer(offer.id),
+    viewer ? reviewService.viewerState(viewer.id, offer.id) : Promise.resolve({ canReview: false as const, existing: null }),
+    listScreenshots(offer.id),
+  ]);
+  const isOwner = viewer?.id === offer.builderId;
 
   const accessText =
     offer.offerType === "completed_product"
@@ -101,6 +111,28 @@ export default async function ProductPage({
             ) : null}
           </div>
         ) : null}
+
+        {screenshots.length || isOwner ? (
+          <section aria-labelledby="screenshots" className="flex flex-col gap-3">
+            <h2 id="screenshots" className="text-lg font-medium text-foreground">
+              Screenshots
+            </h2>
+            {screenshots.length ? (
+              <ul className="grid gap-3 sm:grid-cols-2" data-testid="screenshots">
+                {screenshots.map((src, i) => (
+                  <li key={src} className="overflow-hidden rounded-xl border border-line bg-surface">
+                    {/* Public Storage URLs of the builder's uploads; plain img keeps them unoptimized and unproxied. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt={`${offer.title} screenshot ${i + 1}`} className="aspect-video w-full object-cover" loading="lazy" />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-text">No screenshots yet.</p>
+            )}
+            {isOwner ? <ScreenshotUpload offerId={offer.id} count={screenshots.length} /> : null}
+          </section>
+        ) : null}
       </article>
 
       <aside className="flex flex-col gap-6">
@@ -140,6 +172,7 @@ export default async function ProductPage({
           <p className="text-xs text-muted-text">PayPal Sandbox — test money only. Pay with your PayPal Sandbox account. A one-time payment; nothing is charged later.</p>
         </section>
         <CheckoutPanel offer={offer} viewer={viewer} searchParams={query} />
+        <ReviewsSection offerId={offer.id} summary={reviews} viewer={{ signedIn: Boolean(viewer), ...reviewViewer }} />
       </aside>
     </div>
   );

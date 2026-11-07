@@ -70,6 +70,51 @@ test("a builder cannot change another builder's proposal or offer", async ({ pag
   expect(offer.status()).toBe(403);
 });
 
+const SOME_UUID = "00000000-0000-4000-8000-000000000000";
+
+const ADMIN_CALLS = [
+  { method: "get", path: "/api/admin/moderation" },
+  { method: "get", path: "/api/admin/health" },
+  { method: "post", path: `/api/admin/flags/${SOME_UUID}`, data: { action: "dismiss", note: "" } },
+  { method: "post", path: "/api/admin/clusters/merge", data: { sourceId: CLUSTER_ID, targetId: SOME_UUID, reason: "Not allowed" } },
+  { method: "post", path: "/api/admin/clusters/split", data: { clusterId: CLUSTER_ID, requestIds: [SOME_UUID], newTitle: "Not allowed", category: "software" } },
+  { method: "post", path: `/api/admin/proposals/${PRIVATECODER_ID}/verify`, data: { status: "verified", note: "" } },
+  { method: "post", path: "/api/admin/integrity/run", data: {} },
+  { method: "post", path: "/api/admin/payments/reconcile", data: {} },
+] as const;
+
+test("a buyer gets 403 on every /api/admin route and anonymous callers get 401", async ({ page, request }) => {
+  for (const call of ADMIN_CALLS) {
+    const anon = call.method === "get" ? await request.get(call.path) : await request.post(call.path, { data: call.data });
+    expect(anon.status(), call.path).toBe(401);
+  }
+  await signInAs(page, "buyer");
+  for (const call of ADMIN_CALLS) {
+    const response = call.method === "get" ? await page.request.get(call.path) : await page.request.post(call.path, { data: call.data });
+    expect(response.status(), call.path).toBe(403);
+    expect((await response.json()).error.code).toBe("FORBIDDEN");
+  }
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "This area is for admins" })).toBeVisible();
+});
+
+test("an admin sees every admin tab", async ({ page }) => {
+  await signInAs(page, "admin", "/admin");
+  for (const tab of ["Moderation", "Clusters", "Proposals", "Transactions", "Refunds", "AI runs", "Health"]) {
+    await page.getByRole("tab", { name: new RegExp(`^${tab}`) }).click();
+    await expect(page.getByRole("tabpanel")).toBeVisible();
+  }
+  await page.getByRole("tab", { name: /^Health/ }).click();
+  await expect(page.getByTestId("admin-health")).toContainText("PayPal Sandbox");
+  await page.getByRole("tab", { name: /^Clusters/ }).click();
+  await expect(page.getByTestId("admin-clusters")).toContainText("Offline AI coding assistant");
+  const health = await page.request.get("/api/admin/health");
+  expect(health.status()).toBe(200);
+  const body = await health.text();
+  expect(body).not.toContain("service_role");
+  expect(JSON.parse(body).capabilities.paypal.configured).toBe(false);
+});
+
 test("a cross-origin mutation is rejected before auth", async ({ request }) => {
   const response = await request.post("/api/builder/proposals", { data: proposalBody, headers: { Origin: "https://evil.example" } });
   expect(response.status()).toBe(403);

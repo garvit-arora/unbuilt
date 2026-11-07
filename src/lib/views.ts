@@ -58,6 +58,15 @@ export type ProposalListItem = {
   timeline: string;
   isDemo: boolean;
   createdAt: string;
+  /** Builders-tab comparison (P1-7). */
+  scope: string;
+  techStack: string[];
+  /** Availability of the proposal's newest published offer, or null when nothing is published. */
+  launchState: string | null;
+  /** Distinct buyers with a captured PayPal Sandbox payment for this proposal's offers. */
+  paidBuyers: number;
+  averageRating: number | null;
+  reviewCount: number;
 };
 
 export type OfferListItem = {
@@ -169,4 +178,99 @@ export type AdminRefundItem = RefundView & {
   retryable: boolean;
   /** PENDING with a PayPal refund id: "Check with PayPal" reads its status (no new refund). */
   checkable: boolean;
+};
+
+/** A product review as the public sees it: no buyer or payment ids ("Verified Sandbox buyer" and the date). */
+export type PublicReview = {
+  id: string;
+  rating: number;
+  body: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** The purchase was fully refunded later; the review stays visible with a "Refunded purchase" label. */
+  refundedPurchase: boolean;
+  offerTitle: string;
+  isDemo: boolean;
+};
+
+export type ReviewSummary = { reviews: PublicReview[]; averageRating: number | null; count: number };
+
+/** One entry of a proposal's build-updates feed. */
+export type BuildUpdateView = {
+  id: string;
+  proposalId: string;
+  proposalTitle: string;
+  builderName: string;
+  content: string;
+  progressStatus: string;
+  isDemo: boolean;
+  createdAt: string;
+};
+
+/** In-app notification for the header bell (design 10). */
+export type NotificationView = {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+};
+
+/** An open moderation flag with a readable label for its entity (admin only, never shown publicly). */
+export type AdminFlagView = {
+  id: string;
+  entityType: "demand_request" | "cluster" | "proposal" | "offer" | "profile" | "payment";
+  entityId: string;
+  entityLabel: string;
+  entityHref: string | null;
+  flagType: string;
+  severity: "low" | "medium" | "high";
+  details: Record<string, unknown>;
+  status: "open" | "dismissed" | "actioned";
+  source: "system" | "ai" | "user";
+  isDemo: boolean;
+  createdAt: string;
+  /** Extra context for the actions: whether a capture_mismatch payment can still be marked failed. */
+  paymentStatus?: string | null;
+};
+
+export type AdminClusterView = {
+  id: string;
+  slug: string;
+  title: string;
+  category: string;
+  status: string;
+  isDemo: boolean;
+  members: number;
+  mergedInto: string | null;
+  requests: { id: string; excerpt: string; isDemo: boolean }[];
+};
+
+export type AdminProposalView = {
+  id: string;
+  title: string;
+  builderName: string;
+  clusterTitle: string;
+  clusterSlug: string;
+  status: string;
+  verificationStatus: "unverified" | "verified" | "rejected";
+  isDemo: boolean;
+  createdAt: string;
+};
+
+export type AdminRequestView = { id: string; excerpt: string; status: string; isDemo: boolean; createdAt: string; cluster: { slug: string; title: string } | null };
+
+export type AiRunView = {
+  id: string;
+  agent: string;
+  provider: "llm" | "fallback";
+  modelName: string;
+  status: string;
+  targetType: string;
+  latencyMs: number | null;
+  error: string | null;
+  isDemo: boolean;
+  createdAt: string;
 };

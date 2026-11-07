@@ -587,6 +587,38 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"product_reviews": {
+                  Row: {
+                    "body": string | null,"buyer_id": string,"created_at": string,"id": string,"is_demo": boolean,"offer_id": string,"payment_id": string,"rating": number,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "body"?: string | null,"buyer_id": string,"created_at"?: string,"id"?: string,"is_demo"?: boolean,"offer_id": string,"payment_id": string,"rating": number,"updated_at"?: string
+                  }
+                  Update: {
+                    "body"?: string | null,"buyer_id"?: string,"created_at"?: string,"id"?: string,"is_demo"?: boolean,"offer_id"?: string,"payment_id"?: string,"rating"?: number,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "product_reviews_buyer_id_fkey"
+      columns: ["buyer_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "product_reviews_offer_id_fkey"
+      columns: ["offer_id"]
+isOneToOne: false
+      referencedRelation: "product_offers"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "product_reviews_payment_id_fkey"
+      columns: ["payment_id"]
+isOneToOne: true
+      referencedRelation: "payments"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"profiles": {
                   Row: {
                     "avatar_url": string | null,"bio": string | null,"created_at": string,"display_name": string,"id": string,"is_demo": boolean,"is_platform_builder": boolean,"role": Database["public"]['Enums']["user_role"],"trust_weight": number,"updated_at": string
@@ -749,7 +781,7 @@ isOneToOne: false
                            }
           }
           Enums: {
-            "ai_provider": "llm"|"fallback","category": "software"|"developer_tools"|"productivity"|"education"|"design"|"ai_products"|"business_tools"|"browser_extensions"|"mobile_apps","cluster_status": "emerging"|"active"|"building"|"launched"|"merged"|"archived"|"hidden","intent_level": "interested"|"price_qualified","notification_type": "cluster_match_found"|"cluster_new_members"|"proposal_submitted"|"build_started"|"build_update"|"product_launched"|"purchase_completed"|"refund_status_changed","offer_availability": "draft"|"available"|"paused"|"listing_only"|"retired","offer_type": "completed_product"|"early_access","payment_status": "CREATED"|"APPROVAL_PENDING"|"APPROVED"|"CAPTURE_PENDING"|"COMPLETED"|"FAILED"|"REFUND_PENDING"|"PARTIALLY_REFUNDED"|"REFUNDED","proposal_status": "submitted"|"building"|"launched"|"withdrawn","refund_status": "REQUESTED"|"REJECTED"|"PENDING"|"COMPLETED"|"FAILED","request_status": "analyzed"|"matched"|"new_cluster"|"unclustered"|"hidden"|"spam","user_role": "buyer"|"builder"|"admin","verification_status": "unverified"|"verified"|"rejected"
+            "ai_provider": "llm"|"fallback","category": "software"|"developer_tools"|"productivity"|"education"|"design"|"ai_products"|"business_tools"|"browser_extensions"|"mobile_apps","cluster_status": "emerging"|"active"|"building"|"launched"|"merged"|"archived"|"hidden","intent_level": "interested"|"price_qualified","notification_type": "cluster_match_found"|"cluster_new_members"|"proposal_submitted"|"build_started"|"build_update"|"product_launched"|"purchase_completed"|"refund_status_changed"|"product_reviewed","offer_availability": "draft"|"available"|"paused"|"listing_only"|"retired","offer_type": "completed_product"|"early_access","payment_status": "CREATED"|"APPROVAL_PENDING"|"APPROVED"|"CAPTURE_PENDING"|"COMPLETED"|"FAILED"|"REFUND_PENDING"|"PARTIALLY_REFUNDED"|"REFUNDED","proposal_status": "submitted"|"building"|"launched"|"withdrawn","refund_status": "REQUESTED"|"REJECTED"|"PENDING"|"COMPLETED"|"FAILED","request_status": "analyzed"|"matched"|"new_cluster"|"unclustered"|"hidden"|"spam","user_role": "buyer"|"builder"|"admin","verification_status": "unverified"|"verified"|"rejected"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -869,7 +901,7 @@ export const Constants = {
           }
         },"public": {
           Enums: {
-            "ai_provider": ["llm", "fallback"],"category": ["software", "developer_tools", "productivity", "education", "design", "ai_products", "business_tools", "browser_extensions", "mobile_apps"],"cluster_status": ["emerging", "active", "building", "launched", "merged", "archived", "hidden"],"intent_level": ["interested", "price_qualified"],"notification_type": ["cluster_match_found", "cluster_new_members", "proposal_submitted", "build_started", "build_update", "product_launched", "purchase_completed", "refund_status_changed"],"offer_availability": ["draft", "available", "paused", "listing_only", "retired"],"offer_type": ["completed_product", "early_access"],"payment_status": ["CREATED", "APPROVAL_PENDING", "APPROVED", "CAPTURE_PENDING", "COMPLETED", "FAILED", "REFUND_PENDING", "PARTIALLY_REFUNDED", "REFUNDED"],"proposal_status": ["submitted", "building", "launched", "withdrawn"],"refund_status": ["REQUESTED", "REJECTED", "PENDING", "COMPLETED", "FAILED"],"request_status": ["analyzed", "matched", "new_cluster", "unclustered", "hidden", "spam"],"user_role": ["buyer", "builder", "admin"],"verification_status": ["unverified", "verified", "rejected"]
+            "ai_provider": ["llm", "fallback"],"category": ["software", "developer_tools", "productivity", "education", "design", "ai_products", "business_tools", "browser_extensions", "mobile_apps"],"cluster_status": ["emerging", "active", "building", "launched", "merged", "archived", "hidden"],"intent_level": ["interested", "price_qualified"],"notification_type": ["cluster_match_found", "cluster_new_members", "proposal_submitted", "build_started", "build_update", "product_launched", "purchase_completed", "refund_status_changed", "product_reviewed"],"offer_availability": ["draft", "available", "paused", "listing_only", "retired"],"offer_type": ["completed_product", "early_access"],"payment_status": ["CREATED", "APPROVAL_PENDING", "APPROVED", "CAPTURE_PENDING", "COMPLETED", "FAILED", "REFUND_PENDING", "PARTIALLY_REFUNDED", "REFUNDED"],"proposal_status": ["submitted", "building", "launched", "withdrawn"],"refund_status": ["REQUESTED", "REJECTED", "PENDING", "COMPLETED", "FAILED"],"request_status": ["analyzed", "matched", "new_cluster", "unclustered", "hidden", "spam"],"user_role": ["buyer", "builder", "admin"],"verification_status": ["unverified", "verified", "rejected"]
           }
         }
 } as const

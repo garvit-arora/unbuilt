@@ -217,6 +217,7 @@ export class Fixtures {
     const db = this.db;
     if (this.payments.length) {
       await db.from("moderation_flags").delete().in("entity_id", this.payments);
+      await db.from("product_reviews").delete().in("payment_id", this.payments);
       await db.from("refunds").delete().in("payment_id", this.payments);
       await db.from("payments").delete().in("id", this.payments);
     }

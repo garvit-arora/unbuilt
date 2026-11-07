@@ -94,6 +94,14 @@ export const ClusterSummarySchema = z.object({
 
 export type ClusterSummary = z.infer<typeof ClusterSummarySchema>;
 
+/** Integrity Analyst LLM note (design 7.4 Agent 6): added to an existing flag as `details.aiAssessment`, never acts. */
+export const IntegrityAssessmentSchema = z.object({
+  assessment: z.string().min(3).max(600),
+  likelihood: z.enum(["low", "medium", "high"]),
+});
+
+export type IntegrityAssessment = z.infer<typeof IntegrityAssessmentSchema>;
+
 /**
  * The effective intent used for matching and display: `deepMerge(structured_intent, intent_corrections)` where a
  * corrected field replaces the stored one (arrays are replaced, not concatenated), then intra-intent conflicts are

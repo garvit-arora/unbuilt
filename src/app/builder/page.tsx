@@ -10,6 +10,7 @@ import { label, OFFER_STATUS_LABELS, PROPOSAL_STATUS_LABELS } from "@/lib/labels
 import { formatCents, formatCentsShort } from "@/lib/money";
 import { BUILDER_ROLES, getOptionalSessionUser } from "@/server/auth/guards";
 import { builderDashboard } from "@/server/services/builder.service";
+import { reviewService } from "@/server/services/review.service";
 
 export const metadata: Metadata = { title: "Builder dashboard" };
 
@@ -18,7 +19,7 @@ export default async function BuilderPage() {
   const user = await getOptionalSessionUser();
   if (!user) redirect("/auth?next=/builder");
   if (!BUILDER_ROLES.includes(user.role)) return <BuildersOnly />;
-  const data = await builderDashboard(user);
+  const [data, feedback] = await Promise.all([builderDashboard(user), reviewService.builderFeedback(user.id)]);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6">
@@ -128,6 +129,34 @@ export default async function BuilderPage() {
               Product page views are not tracked. Interested and price-qualified are cluster-wide stated interest, not purchases.
             </p>
           </div>
+        )}
+      </section>
+
+      <section aria-labelledby="buyer-feedback" className="flex flex-col gap-4" data-testid="buyer-feedback">
+        <h2 id="buyer-feedback" className="flex flex-wrap items-center gap-2 text-lg font-medium text-foreground">
+          Buyer feedback
+          {feedback.averageRating !== null ? (
+            <span className="text-sm font-normal text-muted-text">
+              average {feedback.averageRating.toFixed(1)} of 5 · {formatNumber(feedback.count)} review(s)
+            </span>
+          ) : null}
+        </h2>
+        {feedback.reviews.length === 0 ? (
+          <p className="rounded-xl border border-line bg-surface p-5 text-sm text-muted-text">
+            No reviews yet. Buyers can review an offer after a completed PayPal Sandbox purchase.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+            {feedback.reviews.map((r) => (
+              <li key={r.id} className="flex flex-col gap-1 p-4">
+                <span className="text-xs text-muted-text">
+                  {r.rating} of 5 · {r.offerTitle} · Verified Sandbox buyer · {formatDate(r.updatedAt)}
+                  {r.refundedPurchase ? " · Refunded purchase" : ""}
+                </span>
+                {r.body ? <p className="whitespace-pre-line text-sm text-foreground/90">{r.body}</p> : null}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
     </div>

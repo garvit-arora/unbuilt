@@ -11,6 +11,7 @@ import { logger as defaultLogger, type Logger } from "@/server/http/logger";
 import type { Intent } from "@/lib/schemas/intent";
 import type { Actor } from "./cluster.service";
 import { matchingService, type MatchCandidateView, type MatchingService } from "./matching.service";
+import { moderationService, type ModerationService } from "./moderation.service";
 
 /** Wish analysis and submission (design 7.6). The original text and the AI/heuristic output are stored separately. */
 
@@ -21,6 +22,8 @@ export type DemandDeps = {
   requests: RequestsRepo;
   matching: Pick<MatchingService, "matchRequest">;
   logger: Logger;
+  /** Integrity Analyst duplicate check (design 7.6 step 3, non-blocking); omitted in tests. */
+  integrity?: Pick<ModerationService, "afterSubmit">;
 };
 
 export type SubmitResult = {
@@ -84,6 +87,8 @@ export function createDemandService(deps: DemandDeps) {
       isDemo: false,
     });
 
+    if (deps.integrity) await deps.integrity.afterSubmit(request.id);
+
     const base = {
       requestId: request.id,
       intent: effectiveIntent(interpreted.data, corrections),
@@ -120,4 +125,5 @@ export const demandService: DemandService = createDemandService({
   requests: supabaseRequestsRepo,
   matching: matchingService,
   logger: defaultLogger,
+  integrity: moderationService,
 });

@@ -25,6 +25,7 @@ import { logger as defaultLogger, type Logger } from "@/server/http/logger";
 import { candidateFromRun, matchingService, type MatchingService } from "./matching.service";
 import { recordAudit } from "./audit.service";
 import { metricsService, type ClusterMetrics, type MetricsService } from "./metrics.service";
+import { moderationService, type ModerationService } from "./moderation.service";
 import { notificationService, type NotificationService } from "./notification.service";
 
 /** Cluster creation and the join flow (design 7.6). Steps after the RPC are best-effort (logged, never fatal). */
@@ -96,6 +97,8 @@ export type ClusterDeps = {
   logger: Logger;
   /** Cluster Summarizer (LLM only); omitted in tests that do not exercise it. */
   summarizer?: Pick<ClusterSummarizer, "run">;
+  /** Integrity Analyst checks (design 7.4 Agent 6), best-effort after a join; omitted in tests. */
+  integrity?: Pick<ModerationService, "afterClusterActivity">;
 };
 
 export type Actor = { id: string };
@@ -309,6 +312,7 @@ export function createClusterService(deps: ClusterDeps) {
       );
     }
     const metrics = (await bestEffort("metrics", () => deps.metrics.refreshCluster(cluster.id))) ?? null;
+    if (deps.integrity && (newlyLinked || !outcome.alreadyMember)) await deps.integrity.afterClusterActivity(cluster.id, actor.id);
     if (!outcome.alreadyMember) {
       const payload = { clusterId: cluster.id, slug: cluster.slug, title: cluster.title };
       await bestEffort("notify_caller", () => deps.notifications.notify([actor.id], "cluster_match_found", payload));
@@ -471,4 +475,5 @@ export const clusterService: ClusterService = createClusterService({
   notifications: notificationService,
   logger: defaultLogger,
   summarizer: clusterSummarizer,
+  integrity: moderationService,
 });

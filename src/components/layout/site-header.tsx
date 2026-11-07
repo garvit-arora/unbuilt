@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getOptionalSessionUser } from "@/server/auth/guards";
 import { MobileNav } from "./mobile-nav";
+import { NotificationBell } from "./notification-bell";
 import { visibleNavLinks } from "./nav-links";
 import { UserMenu } from "./user-menu";
 
@@ -28,17 +29,20 @@ export async function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto hidden items-center gap-2 md:flex">
-          {menuUser ? (
-            <UserMenu {...menuUser} />
-          ) : (
-            <Button asChild size="lg">
-              <Link href="/auth">Sign in</Link>
-            </Button>
-          )}
-        </div>
-        <div className="ml-auto md:hidden">
-          <MobileNav links={links} user={menuUser} />
+        <div className="ml-auto flex items-center gap-1 md:gap-2">
+          {menuUser ? <NotificationBell /> : null}
+          <div className="hidden items-center md:flex">
+            {menuUser ? (
+              <UserMenu {...menuUser} />
+            ) : (
+              <Button asChild size="lg">
+                <Link href="/auth">Sign in</Link>
+              </Button>
+            )}
+          </div>
+          <div className="md:hidden">
+            <MobileNav links={links} user={menuUser} />
+          </div>
         </div>
       </div>
     </header>

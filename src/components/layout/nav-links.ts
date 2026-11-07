@@ -19,6 +19,7 @@ export const NAV_LINKS: readonly NavLink[] = [
   { href: "/dashboard", label: "Dashboard", signedInOnly: true },
   { href: "/payments", label: "Payments", signedInOnly: true },
   { href: "/builder", label: "Builder", roles: ["builder", "admin"] },
+  { href: "/admin", label: "Admin", roles: ["admin"] },
 ];
 
 export function visibleNavLinks(role: NavRole | null, links: readonly NavLink[] = NAV_LINKS): NavLink[] {

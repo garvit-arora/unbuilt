@@ -12,6 +12,7 @@ let userA: TestUser;
 let userB: TestUser;
 let clusterId: string;
 let paymentBId: string;
+let reviewOfferId: string;
 
 type Result = { data: unknown[] | null; error: { code?: string; message: string } | null };
 
@@ -83,6 +84,11 @@ beforeAll(async () => {
     .from("offer_deliverables")
     .insert({ offer_id: payment.offer_id, delivery_type: "download", deliverable_key: "localpilot-starter-kit.md" });
   if (deliverable.error) throw new Error(deliverable.error.message);
+  const review = await db
+    .from("product_reviews")
+    .insert({ offer_id: payment.offer_id, payment_id: payment.id, buyer_id: userB.id, rating: 4, body: "RLS review" });
+  if (review.error) throw new Error(review.error.message);
+  reviewOfferId = payment.offer_id;
 });
 
 afterAll(async () => {
@@ -125,6 +131,24 @@ describe("anon key", () => {
     }
     const star = await anon.from("profiles").select("*").limit(1);
     expect(star.error?.code).toBe(PERMISSION_DENIED);
+  });
+
+  it("can read product_reviews' public columns but never buyer_id or payment_id (P1-7)", async () => {
+    const ok = await anon.from("product_reviews").select("id, offer_id, rating, body, created_at").eq("offer_id", reviewOfferId);
+    expect(ok.error).toBeNull();
+    expect(ok.data).toEqual([expect.objectContaining({ offer_id: reviewOfferId, rating: 4, body: "RLS review" })]);
+    for (const column of ["buyer_id", "payment_id"]) {
+      const denied = await anon.from("product_reviews").select(`id, ${column}`).limit(1);
+      expect(denied.error?.code, column).toBe(PERMISSION_DENIED);
+    }
+    const star = await anon.from("product_reviews").select("*").limit(1);
+    expect(star.error?.code).toBe(PERMISSION_DENIED);
+    const buyerOwn = await userB.client.from("product_reviews").select("id, buyer_id").limit(1);
+    expect(buyerOwn.error?.code).toBe(PERMISSION_DENIED);
+    const insert = await userB.client.from("product_reviews").insert({ offer_id: reviewOfferId, payment_id: paymentBId, buyer_id: userB.id, rating: 5 });
+    expect(insert.error?.code).toBe(PERMISSION_DENIED);
+    const update = await userB.client.from("product_reviews").update({ rating: 1 }).eq("offer_id", reviewOfferId).select("id");
+    expect(update.error?.code ?? (update.data?.length === 0 ? PERMISSION_DENIED : "updated")).toBe(PERMISSION_DENIED);
   });
 
   it("can read feature_requests without created_by", async () => {

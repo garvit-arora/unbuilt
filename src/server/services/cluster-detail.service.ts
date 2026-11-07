@@ -1,6 +1,6 @@
 import "server-only";
 import { UUID_RE } from "@/lib/schemas/demand";
-import type { FeatureView, OfferListItem, ProposalListItem, ViewerState } from "@/lib/views";
+import type { BuildUpdateView, FeatureView, OfferListItem, ProposalListItem, ViewerState } from "@/lib/views";
 import { effectiveIntent } from "@/server/ai/schemas";
 import type { SessionUser } from "@/server/auth/guards";
 import { supabaseClustersRepo, type ClusterRecord } from "@/server/db/repositories/clusters.repo";
@@ -10,6 +10,7 @@ import { supabaseIntentsRepo } from "@/server/db/repositories/intents.repo";
 import { supabaseMembershipsRepo } from "@/server/db/repositories/memberships.repo";
 import { getServiceClient } from "@/server/db/service-client";
 import type { Intent, IntentCorrection } from "@/lib/schemas/intent";
+import { CAPTURED_STATES } from "@/server/payments/state-machine";
 import { getClusterMetrics, type ClusterMetrics } from "./metrics.service";
 
 /**
@@ -41,6 +42,7 @@ export type ClusterDetail = {
   problem: { alternatives: { name: string; count: number }[]; linkedWishes: number; includesDemo: boolean };
   proposals: ProposalListItem[];
   offers: OfferListItem[];
+  buildUpdates: BuildUpdateView[];
   viewer: ViewerState;
 };
 
@@ -92,13 +94,36 @@ async function problemIntelligence(clusterId: string) {
   };
 }
 
+/** Paid buyers and review averages per proposal for the Builders-tab comparison (captured Sandbox payments only). */
+export function proposalStats(
+  payments: readonly { proposal_id: string; buyer_id: string }[],
+  reviews: readonly { offer_id: string; rating: number }[],
+  offerProposal: ReadonlyMap<string, string>,
+) {
+  const buyers = new Map<string, Set<string>>();
+  for (const p of payments) buyers.set(p.proposal_id, (buyers.get(p.proposal_id) ?? new Set()).add(p.buyer_id));
+  const ratings = new Map<string, number[]>();
+  for (const r of reviews) {
+    const proposalId = offerProposal.get(r.offer_id);
+    if (proposalId) ratings.set(proposalId, [...(ratings.get(proposalId) ?? []), r.rating]);
+  }
+  return (proposalId: string) => {
+    const list = ratings.get(proposalId) ?? [];
+    return {
+      paidBuyers: buyers.get(proposalId)?.size ?? 0,
+      averageRating: list.length ? Math.round((list.reduce((s, v) => s + v, 0) / list.length) * 10) / 10 : null,
+      reviewCount: list.length,
+    };
+  };
+}
+
 async function proposalsAndOffers(clusterId: string, viewer: SessionUser | null) {
   const db = getServiceClient();
   const [proposals, offers] = await Promise.all([
     db
       .from("product_proposals")
       .select(
-        "id, cluster_id, title, builder_id, status, verification_status, proposed_price_cents, currency, timeline, is_demo, created_at, profiles!product_proposals_builder_id_fkey(display_name)",
+        "id, cluster_id, title, builder_id, status, verification_status, proposed_price_cents, currency, timeline, scope, tech_stack, is_demo, created_at, profiles!product_proposals_builder_id_fkey(display_name)",
       )
       .eq("cluster_id", clusterId)
       .order("created_at", { ascending: false }),
@@ -110,12 +135,30 @@ async function proposalsAndOffers(clusterId: string, viewer: SessionUser | null)
   ]);
   if (proposals.error) dbFail("cluster proposals failed", proposals.error);
   if (offers.error) dbFail("cluster offers failed", offers.error);
+  const offerIds = offers.data.map((o) => o.id);
+  const [payments, reviews] = await Promise.all([
+    offerIds.length
+      ? db.from("payments").select("proposal_id, buyer_id").in("offer_id", offerIds).in("status", [...CAPTURED_STATES])
+      : Promise.resolve({ data: [] as { proposal_id: string; buyer_id: string }[], error: null }),
+    offerIds.length
+      ? db.from("product_reviews").select("offer_id, rating").in("offer_id", offerIds)
+      : Promise.resolve({ data: [] as { offer_id: string; rating: number }[], error: null }),
+  ]);
+  if (payments.error) dbFail("cluster payments failed", payments.error);
+  if (reviews.error) dbFail("cluster reviews failed", reviews.error);
+  const stats = proposalStats(payments.data, reviews.data, new Map(offers.data.map((o) => [o.id, o.proposal_id])));
+  const launchState = (proposalId: string) =>
+    offers.data.find((o) => o.proposal_id === proposalId && (PUBLISHED_OFFER_STATES as readonly string[]).includes(o.availability_status))?.availability_status ?? null;
   const isAdmin = viewer?.role === "admin";
   return {
     proposals: proposals.data
       .filter((p) => p.status !== "withdrawn" || isAdmin || p.builder_id === viewer?.id)
       .map(
         (p): ProposalListItem => ({
+          ...stats(p.id),
+          scope: p.scope,
+          techStack: p.tech_stack,
+          launchState: launchState(p.id),
           id: p.id,
           clusterId: p.cluster_id,
           title: p.title,
@@ -145,6 +188,34 @@ async function proposalsAndOffers(clusterId: string, viewer: SessionUser | null)
         }),
       ),
   };
+}
+
+export const CLUSTER_UPDATES_LIMIT = 20;
+
+/** Build-updates feed across the given proposals, newest first (design 10 P1-7). Updates are public data. */
+export async function listBuildUpdates(proposals: readonly Pick<ProposalListItem, "id" | "title" | "builderName">[], limit = CLUSTER_UPDATES_LIMIT): Promise<BuildUpdateView[]> {
+  if (proposals.length === 0) return [];
+  const { data, error } = await getServiceClient()
+    .from("product_build_updates")
+    .select("id, proposal_id, content, progress_status, is_demo, created_at")
+    .in(
+      "proposal_id",
+      proposals.map((p) => p.id),
+    )
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) dbFail("build updates failed", error);
+  const byId = new Map(proposals.map((p) => [p.id, p]));
+  return data.map((u) => ({
+    id: u.id,
+    proposalId: u.proposal_id,
+    proposalTitle: byId.get(u.proposal_id)?.title ?? "Proposal",
+    builderName: byId.get(u.proposal_id)?.builderName ?? "Builder",
+    content: u.content,
+    progressStatus: u.progress_status,
+    isDemo: u.is_demo,
+    createdAt: u.created_at,
+  }));
 }
 
 async function viewerState(clusterId: string, featureIds: string[], viewer: SessionUser | null): Promise<ViewerState> {
@@ -232,6 +303,7 @@ export async function getClusterDetail(ref: string, viewer: SessionUser | null):
       problem,
       proposals: market.proposals,
       offers: market.offers,
+      buildUpdates: await listBuildUpdates(market.proposals.filter((p) => p.status !== "withdrawn")),
       viewer: await viewerState(
         cluster.id,
         features.map((f) => f.id),

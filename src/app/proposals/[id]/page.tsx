@@ -2,10 +2,11 @@ import { BadgeCheck, ExternalLink } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BuildUpdates } from "@/components/builder/build-updates";
 import { ProposalOwnerControls } from "@/components/builder/proposal-owner-controls";
 import { DemoChip } from "@/components/layout/labels";
-import { formatDate, formatDateTime } from "@/lib/format";
-import { label, OFFER_STATUS_LABELS, OFFER_TYPE_LABELS, PROGRESS_LABELS, PROPOSAL_STATUS_LABELS, VERIFICATION_LABELS } from "@/lib/labels";
+import { formatDate } from "@/lib/format";
+import { label, OFFER_STATUS_LABELS, OFFER_TYPE_LABELS, PROPOSAL_STATUS_LABELS, VERIFICATION_LABELS } from "@/lib/labels";
 import { formatCentsShort } from "@/lib/money";
 import { UUID_RE } from "@/lib/schemas/demand";
 import { getOptionalSessionUser } from "@/server/auth/guards";
@@ -131,20 +132,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
           <h2 id="updates" className="text-lg font-medium text-foreground">
             Build updates
           </h2>
-          {updates.length === 0 ? (
-            <p className="text-sm text-muted-text">No updates yet.</p>
-          ) : (
-            <ol className="flex flex-col gap-3 border-l border-line pl-4">
-              {updates.map((u) => (
-                <li key={u.id} className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-text">
-                    {formatDateTime(u.createdAt)} · {label(PROGRESS_LABELS, u.progressStatus)}
-                  </span>
-                  <p className="whitespace-pre-line text-sm text-foreground/90">{u.content}</p>
-                </li>
-              ))}
-            </ol>
-          )}
+          <BuildUpdates updates={updates} />
         </section>
       </article>
 

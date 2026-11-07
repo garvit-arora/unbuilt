@@ -6,6 +6,7 @@ import { supabaseIntentsRepo, type IntentsRepo } from "@/server/db/repositories/
 import { logger as defaultLogger, type Logger } from "@/server/http/logger";
 import { clusterService, type Actor, type ClusterService } from "./cluster.service";
 import { metricsService, type MetricsService } from "./metrics.service";
+import { moderationService, type ModerationService } from "./moderation.service";
 
 /** L1/L2 purchase intents (spec section 7). No money moves here; interest is never treated as a payment. */
 
@@ -15,6 +16,8 @@ export type IntentDeps = {
   clusterService: Pick<ClusterService, "resolveJoinable" | "ensureMember">;
   metrics: MetricsService;
   logger: Logger;
+  /** Integrity Analyst price-outlier and cluster checks after a priced intent (best-effort); omitted in tests. */
+  integrity?: Pick<ModerationService, "afterClusterActivity">;
 };
 
 export function createIntentService(deps: IntentDeps) {
@@ -44,6 +47,7 @@ export function createIntentService(deps: IntentDeps) {
     } catch (error) {
       deps.logger.warn("intent.post_commit_failed", { error });
     }
+    if (priced && deps.integrity) await deps.integrity.afterClusterActivity(cluster.id, actor.id);
     return { intent, metrics };
   }
 
@@ -73,4 +77,5 @@ export const intentService: IntentService = createIntentService({
   clusterService,
   metrics: metricsService,
   logger: defaultLogger,
+  integrity: moderationService,
 });
