@@ -26,6 +26,7 @@ import { recordAudit, type AuditEntry } from "./audit.service";
 import { refreshCluster } from "./metrics.service";
 import { notificationService, type NotificationService } from "./notification.service";
 import { createReconciliationService, type CaptureOutcome, type ReconcileResult } from "./reconciliation.service";
+import { refundService } from "./refund.service";
 
 /**
  * PayPal Sandbox checkout (design 9.4, 9.5, 9.6). The server owns every status: amounts come from the offer,
@@ -46,9 +47,18 @@ export type PaymentServiceDeps = {
   orders: OrdersApi;
   flags: Pick<ClustersRepo, "openFlag">;
   afterCapture: (payment: PaymentRecord) => Promise<void>;
+  /** REFUND_PENDING row of reconciliation (refund.service, P1-5). Without it such payments are IGNORED. */
+  refundSide?: (payment: PaymentRecord, source: PaymentSource) => Promise<ReconcileResult>;
+  audit?: (entry: AuditEntry) => Promise<void>;
   logger: Logger;
   now: () => Date;
 };
+
+/** Admin bulk reconcile picks payments pending for longer than this (design 9.6). */
+export const ADMIN_RECONCILE_AFTER_MS = 10 * 60 * 1000;
+export const ADMIN_RECONCILE_LIMIT = 50;
+
+export type AdminReconcileItem = { paymentId: string; from: PaymentStatus; status: PaymentStatus; outcome: ReconcileResult["outcome"]; reason: string | null };
 
 export type CreateOrderResult = { paymentId: string; orderId: string; amountCents: number; currency: string };
 
@@ -116,6 +126,7 @@ export function createPaymentService(deps: PaymentServiceDeps) {
     flags: deps.flags,
     afterCapture: deps.afterCapture,
     recapture: (payment, source) => captureAndApply(payment, source),
+    refundSide: deps.refundSide,
     logger: log,
     now: deps.now,
   });
@@ -369,7 +380,37 @@ export function createPaymentService(deps: PaymentServiceDeps) {
     };
   }
 
-  return { createOrder, capture, status, purchaseState, captureAndApply, reconcileOrder: reconciliation.reconcileOrder };
+  /**
+   * Admin "Reconcile" (design 9.6, P1-4): one payment, or every payment still pending (open or REFUND_PENDING) after
+   * 10 minutes, oldest first. Each goes through the same `reconcileOrder` as status polling and webhooks.
+   */
+  async function reconcileForAdmin(actor: Actor, paymentId?: string): Promise<{ reconciled: number; results: AdminReconcileItem[] }> {
+    assertPayPalConfigured(config);
+    let targets: PaymentRecord[];
+    if (paymentId) {
+      const one = await payments.findById(paymentId);
+      if (!one) throw new AppError("NOT_FOUND", 404, "Payment not found.");
+      targets = [one];
+    } else {
+      const before = new Date(deps.now().getTime() - ADMIN_RECONCILE_AFTER_MS).toISOString();
+      targets = await payments.listStaleInStatuses(RECONCILE_ON_STATUS, before, ADMIN_RECONCILE_LIMIT);
+    }
+    const results: AdminReconcileItem[] = [];
+    for (const payment of targets) {
+      const result = await reconciliation.reconcileOrder(payment, "reconcile");
+      results.push({ paymentId: payment.id, from: payment.status, status: result.payment.status, outcome: result.outcome, reason: result.reason ?? null });
+    }
+    await deps.audit?.({
+      actorId: actor.id,
+      action: "payment.reconcile",
+      entityType: paymentId ? "payment" : null,
+      entityId: paymentId ?? null,
+      metadata: { count: results.length, updated: results.filter((r) => r.outcome === "UPDATED").length },
+    });
+    return { reconciled: results.length, results };
+  }
+
+  return { createOrder, capture, status, purchaseState, captureAndApply, reconcileOrder: reconciliation.reconcileOrder, reconcileForAdmin };
 }
 
 export type PaymentService = ReturnType<typeof createPaymentService>;
@@ -454,6 +495,8 @@ export const paymentService: PaymentService = createPaymentService({
     audit: recordAudit,
     logger: defaultLogger,
   }),
+  refundSide: (payment, source) => refundService.reconcilePayment(payment, source),
+  audit: recordAudit,
   logger: defaultLogger,
   now: () => new Date(),
 });

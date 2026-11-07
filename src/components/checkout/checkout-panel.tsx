@@ -4,13 +4,16 @@ import { SandboxBadge } from "@/components/layout/labels";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { formatCents } from "@/lib/money";
+import type { RefundPanelView } from "@/lib/views";
 import type { SessionUser } from "@/server/auth/guards";
 import { env } from "@/server/config/env";
 import { deliveryService, type DeliveryLink } from "@/server/services/delivery.service";
 import type { PublicOffer } from "@/server/services/offer.service";
 import { paymentService, type PaymentView } from "@/server/services/payment.service";
+import { refundService } from "@/server/services/refund.service";
 import { isCancelReturn, resolveReturnOrderId } from "./checkout-view";
 import { PayPalCheckout } from "./paypal-checkout";
+import { RefundForm } from "./refund-form";
 
 /**
  * Checkout area of `/products/[id]` (design 9.9). Decides the state on the server: draft, already purchased
@@ -38,7 +41,7 @@ function Notice({ title, children, testId }: { title: string; children: React.Re
   );
 }
 
-function Receipt({ offer, payment, access }: { offer: PublicOffer; payment: PaymentView; access: DeliveryLink | null }) {
+function Receipt({ offer, payment, access, refundPanel }: { offer: PublicOffer; payment: PaymentView; access: DeliveryLink | null; refundPanel: RefundPanelView | null }) {
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-lime/30 bg-lime/5 p-4" data-testid="checkout-receipt">
       <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
@@ -83,6 +86,7 @@ function Receipt({ offer, payment, access }: { offer: PublicOffer; payment: Paym
         </Link>
         .
       </p>
+      {refundPanel ? <RefundForm panel={refundPanel} /> : null}
     </div>
   );
 }
@@ -107,8 +111,8 @@ export async function CheckoutPanel({
       </Notice>
     );
   } else if (viewer && purchase?.captured) {
-    const access = await deliveryService.accessLink(viewer.id, offer.id);
-    body = <Receipt offer={offer} payment={purchase.captured} access={access} />;
+    const [access, refundPanels] = await Promise.all([deliveryService.accessLink(viewer.id, offer.id), refundService.buyerPanels(viewer.id, [purchase.captured.id])]);
+    body = <Receipt offer={offer} payment={purchase.captured} access={access} refundPanel={refundPanels.get(purchase.captured.id) ?? null} />;
   } else if (state === "listing_only") {
     body = (
       <Notice title="Listing only" testId="checkout-listing-only">

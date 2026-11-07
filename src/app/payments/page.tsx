@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { RefundQueue } from "@/components/admin/refund-queue";
 import { SandboxValueChart } from "@/components/charts/sandbox-value-chart";
+import { RefundForm } from "@/components/checkout/refund-form";
 import { MetricTile } from "@/components/demand/metric-tile";
 import { DemoChip, EstimateChip, SandboxBadge } from "@/components/layout/labels";
 import { formatDateTime, formatNumber, formatPercent } from "@/lib/format";
 import { label, PAYMENT_STATUS_LABELS } from "@/lib/labels";
 import { formatCents } from "@/lib/money";
+import type { RefundPanelView } from "@/lib/views";
 import { getOptionalSessionUser } from "@/server/auth/guards";
+import { env } from "@/server/config/env";
 import { listPayments, paymentMetrics, type PaymentListItem } from "@/server/services/analytics.service";
+import { refundService } from "@/server/services/refund.service";
 
 export const metadata: Metadata = { title: "Payments" };
 
@@ -20,7 +25,17 @@ const SCOPE_COPY = {
 
 const rate = (value: number | null) => (value === null ? "—" : formatPercent(value, 1));
 
-function PaymentRows({ items, showHistory, testId }: { items: PaymentListItem[]; showHistory: boolean; testId: string }) {
+function PaymentRows({
+  items,
+  showHistory,
+  testId,
+  refundPanels,
+}: {
+  items: PaymentListItem[];
+  showHistory: boolean;
+  testId: string;
+  refundPanels?: Map<string, RefundPanelView>;
+}) {
   return (
     <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface" data-testid={testId}>
       {items.map((p) => (
@@ -63,6 +78,7 @@ function PaymentRows({ items, showHistory, testId }: { items: PaymentListItem[];
               ))}
             </ol>
           ) : null}
+          {refundPanels?.get(p.id) ? <RefundForm panel={refundPanels.get(p.id)!} /> : null}
         </li>
       ))}
     </ul>
@@ -73,11 +89,16 @@ function PaymentRows({ items, showHistory, testId }: { items: PaymentListItem[];
 export default async function PaymentsPage() {
   const user = await getOptionalSessionUser();
   if (!user) redirect("/auth?next=/payments");
-  const [{ scope, metrics }, purchases, sales] = await Promise.all([
+  const [{ scope, metrics }, purchases, sales, refundQueue] = await Promise.all([
     paymentMetrics(user),
     listPayments(user, "buyer", { withHistory: true }),
     user.role === "buyer" ? Promise.resolve([] as PaymentListItem[]) : listPayments(user, user.role === "admin" ? "admin" : "builder", { limit: 50 }),
+    user.role === "admin" ? refundService.adminQueue() : Promise.resolve(null),
   ]);
+  const refundPanels = await refundService.buyerPanels(
+    user.id,
+    purchases.map((p) => p.id),
+  );
   const s = metrics.sandbox;
   const statedDemo = metrics.stated.perCluster.some((c) => c.includesDemo);
 
@@ -188,7 +209,7 @@ export default async function PaymentsPage() {
             No payments yet ({formatCents(0)}). Purchases happen on a product page through a real PayPal Sandbox checkout.
           </p>
         ) : (
-          <PaymentRows items={purchases} showHistory testId="my-payments" />
+          <PaymentRows items={purchases} showHistory testId="my-payments" refundPanels={refundPanels} />
         )}
       </section>
 
@@ -204,6 +225,19 @@ export default async function PaymentsPage() {
           ) : (
             <PaymentRows items={sales} showHistory={false} testId="sales" />
           )}
+        </section>
+      ) : null}
+
+      {refundQueue ? (
+        <section aria-labelledby="refund-queue-title" className="flex scroll-mt-20 flex-col gap-4" id="refund-queue">
+          <h2 id="refund-queue-title" className="flex items-center gap-2 text-lg font-medium text-foreground">
+            Refund queue <SandboxBadge />
+          </h2>
+          <p className="text-sm text-muted-text">
+            Buyer refund requests and their PayPal Sandbox refunds. Approving sends the refund to PayPal; a refund that PayPal did not confirm stays
+            pending and can be retried with the same PayPal-Request-Id, so it is never paid twice.
+          </p>
+          <RefundQueue items={refundQueue} paypalConfigured={env.paypal.configured} />
         </section>
       ) : null}
     </div>

@@ -18,7 +18,8 @@ import { isCaptured, isCaptureSideOutcomeAllowed, isOpen, type PaymentStatus } f
 /**
  * Order reconciliation (design 9.6, P0-9). Reads the authoritative PayPal order and applies exactly one rule of the
  * 9.6 table. Capture-side information only advances open payments; captured or refunded payments return
- * `IGNORED (stale)` without calling PayPal. The REFUND_PENDING (refund-side) row arrives with refund.service (P1-5).
+ * `IGNORED (stale)` without calling PayPal. REFUND_PENDING payments are delegated to the refund side
+ * (`refund.service.reconcilePayment`: GET refund, or resend a refund stuck without a PayPal id after 60 s).
  */
 
 export const STALE_CAPTURE_MS = 30_000;
@@ -49,6 +50,8 @@ export type ReconciliationDeps = {
   afterCapture: (payment: PaymentRecord) => Promise<void>;
   /** `payment.service.captureAndApply`, used to re-issue a stale capture with the current request id. */
   recapture: (payment: PaymentRecord, source: PaymentSource) => Promise<CaptureOutcome>;
+  /** `refund.service.reconcilePayment`: the REFUND_PENDING (refund-side) row of the 9.6 table. */
+  refundSide?: (payment: PaymentRecord, source: PaymentSource) => Promise<ReconcileResult>;
   logger: Logger;
   now: () => Date;
 };
@@ -181,7 +184,10 @@ export function createReconciliationService(deps: ReconciliationDeps) {
 
   async function reconcileOrder(payment: PaymentRecord, source: PaymentSource = "reconcile"): Promise<ReconcileResult> {
     if (IGNORED_STATES.includes(payment.status)) return { outcome: "IGNORED", reason: "stale", payment };
-    if (payment.status === "REFUND_PENDING") return { outcome: "IGNORED", reason: "refund_side_only", payment };
+    if (payment.status === "REFUND_PENDING") {
+      // Refund side only: the order/capture status is never consulted for a payment whose money is captured.
+      return deps.refundSide ? deps.refundSide(payment, source) : { outcome: "IGNORED", reason: "refund_side_only", payment };
+    }
     if (!payment.paypalOrderId) return { outcome: "UNCHANGED", reason: "no_order", payment };
 
     let response;

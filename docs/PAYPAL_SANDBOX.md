@@ -68,7 +68,9 @@ Offers from other builders are published as **Listing only**. UNBUILT does not c
 
 Synchronous capture plus reconciliation keep payments correct without webhooks. The product page reconciles an open order once on load, and the checkout polls `GET /api/paypal/orders/<id>/status?reconcile=1` while a capture is confirming.
 
-Webhook processing (`POST /api/webhooks/paypal`, signature verification through `POST /v1/notifications/verify-webhook-signature`) ships with the P1 webhook increment. When your deployment has it:
+`POST /api/webhooks/paypal` verifies every delivery through `POST /v1/notifications/verify-webhook-signature` (the raw body is embedded byte-for-byte) and records it in `webhook_events`, so a redelivery of a processed event is a no-op. A verified event is only used to find the payment: the status always comes from a fresh PayPal GET of the order, capture or refund. Without `PAYPAL_WEBHOOK_ID` the endpoint answers `503 WEBHOOK_NOT_CONFIGURED`.
+
+To enable it:
 
 1. In **Apps & Credentials → your app → Webhooks**, add `https://<your-public-host>/api/webhooks/paypal`. PayPal needs a public HTTPS URL, such as a deployed preview or a tunnel. `localhost` does not work.
 2. Subscribe to these 7 events:
@@ -80,6 +82,15 @@ Webhook processing (`POST /api/webhooks/paypal`, signature verification through 
    - `PAYMENT.CAPTURE.REFUNDED`
    - `PAYMENT.CAPTURE.REVERSED`
 3. Copy the **Webhook ID** into `PAYPAL_WEBHOOK_ID`.
+
+How events are handled:
+
+- Order and capture events reconcile the payment exactly like `?reconcile=1`. They never change a payment that is already captured or refunded; a late or repeated `PAYMENT.CAPTURE.COMPLETED` is recorded as `IGNORED` (`stale`).
+- `PAYMENT.CAPTURE.REFUNDED` (and `REVERSED` with a refund resource) finishes the matching UNBUILT refund, or records a refund issued in the PayPal dashboard as "Refund issued outside UNBUILT" and recomputes the refunded amount.
+- `PAYMENT.CAPTURE.REVERSED` with a capture resource (a reversal or chargeback) opens a high-severity `capture_mismatch` flag for an admin. No status or refund amount is inferred from it.
+- A processing error answers 500 so PayPal retries the delivery.
+
+Admins can also reconcile without webhooks: `POST /api/admin/payments/reconcile` with `{}` reconciles every payment that has been pending for more than 10 minutes, and `{ "paymentId": "<id>" }` reconciles one payment.
 
 ## 6. The PayPal button
 
@@ -105,11 +116,14 @@ The checkout offers only the PayPal wallet button. Card, Pay Later and Venmo are
 
 ## 8. Refunds
 
-The in-app refund workflow (buyer request, admin approval, `POST /v2/payments/captures/{id}/refund` with its own `PayPal-Request-Id`) ships with the P1 refund increment. Until then:
-
-- Refund a Sandbox capture in the PayPal developer dashboard. Sign in to [sandbox.paypal.com](https://www.sandbox.paypal.com) as the **Business** account, open the payment in **Activity** and choose **Issue a refund**.
-- UNBUILT records refunds made outside the app when the webhook increment processes `PAYMENT.CAPTURE.REFUNDED` (section 5). Until then the local payment keeps its captured status.
-- AI output can never trigger a refund.
+1. As the buyer, open the receipt on the product page (or `/payments`). The **Refunds** box shows the refund terms, the window end date and the refundable amount. Enter a reason (and optionally a partial amount in USD) and click **Request refund**. Nothing is sent to PayPal yet.
+2. Sign in as **admin@unbuilt.demo** and open `/payments#refund-queue`. Click **Approve and refund**. UNBUILT moves the payment to `REFUND_PENDING`, calls `POST /v2/payments/captures/{capture_id}/refund` with the refund's own `PayPal-Request-Id`, and finishes the refund when PayPal answers `COMPLETED`: the payment becomes `REFUNDED` (or `PARTIALLY_REFUNDED`) and the buyer gets a notification. **Reject** needs a note for the buyer.
+3. Edge cases:
+   - **PayPal unreachable or timed out**: the refund stays `PENDING` and the admin sees **Retry with PayPal**. The retry re-sends the same request with the same `PayPal-Request-Id`, so PayPal never refunds twice. Status polling and admin reconcile also re-send it automatically once it is older than 60 seconds.
+   - **PayPal answers `PENDING`** (e.g. an eCheck-funded payment): the refund stays pending until the `PAYMENT.CAPTURE.REFUNDED` webhook, a reconcile, or **Check with PayPal** reads PayPal's final status.
+   - **Window ended**: admins can still approve; the override is written to the audit log.
+   - **Refund in the PayPal dashboard**: sign in to [sandbox.paypal.com](https://www.sandbox.paypal.com) as the **Business** account, open the payment in **Activity** and choose **Issue a refund**. With webhooks configured (section 5), UNBUILT records it as "Refund issued outside UNBUILT".
+- AI output can never trigger a refund. Only a buyer request plus an admin action, or an admin-issued refund, reaches PayPal.
 
 ## 9. Troubleshooting
 
@@ -122,5 +136,8 @@ The in-app refund workflow (buyer request, admin approval, `POST /v2/payments/ca
 | `422 PAYPAL_INSTRUMENT_DECLINED` | The Sandbox funding source was declined. The PayPal window restarts so you can choose another one. The next capture uses a new request id (`<payment>-capture-2`). |
 | "Still confirming with PayPal…" | The capture is pending at PayPal or the response was lost. You will not be charged twice. Use **Check again** or look at `/payments`. A stale capture is safely re-sent after 30 s with the same request id. |
 | `502 PAYPAL_CAPTURE_MISMATCH` | PayPal's capture did not match the payment, so it is not marked paid. A high-severity `capture_mismatch` flag is opened. An admin refunds the capture in the Sandbox dashboard. |
+| `422 REFUND_NOT_ELIGIBLE` | The payment is not captured, the refund window ended (buyer requests only), a refund is already open, or the amount exceeds what remains. An admin `issue` while a request is open answers `409`: approve or reject the open request first. |
+| `422 PAYPAL_REFUND_FAILED` | PayPal rejected the refund (for example `CAPTURE_FULLY_REFUNDED`). The refund is marked `FAILED` and the payment returns to its captured status. |
+| `400 WEBHOOK_VERIFICATION_FAILED` | PayPal did not confirm the signature, or a PayPal header was missing. Check that `PAYPAL_WEBHOOK_ID` is the id of the webhook PayPal is calling. |
 | The PayPal window does not open | A popup blocker is active, or the browser blocks third-party cookies for `sandbox.paypal.com`. Allow both for the site. |
 | Product shows "Listing only" | The offer is not sold through the platform demo merchant (section 4). |

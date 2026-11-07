@@ -1,12 +1,20 @@
+import type { NewClusterEvent } from "@/server/db/repositories/clusters.repo";
 import type { OfferRecord } from "@/server/db/repositories/marketplace.repo";
 import type { PaymentRecord } from "@/server/db/repositories/payments.repo";
 import type { PayPalConfig } from "@/server/paypal/config";
+import { verifyWebhookSignature } from "@/server/paypal/webhook-verify";
+import type { AuditEntry } from "@/server/services/audit.service";
 import { createPaymentService } from "@/server/services/payment.service";
+import { createRefundService } from "@/server/services/refund.service";
+import { createWebhookService } from "@/server/services/webhook.service";
 import { createMarketplaceStore } from "./marketplace-store";
-import { createFakePayPal, fakeOrdersApi, silentLogger, TEST_PAYPAL_CONFIG } from "./paypal";
-import { createFlagStore, createPaymentStore } from "./payment-store";
+import { createFakePayPal, fakeOrdersApi, fakePayPalFetch, fakeRefundsApi, silentLogger, TEST_PAYPAL_CONFIG } from "./paypal";
+import { createFlagStore, createPaymentStore, createRefundStore, createWebhookEventStore } from "./payment-store";
 
-/** Payment service wired to in-memory repos, a controllable clock and the fake PayPal API. */
+/**
+ * Payment, refund and webhook services wired to in-memory repos, a controllable clock and the fake PayPal API.
+ * PayPal is always the fake: an order is approved only through `paypal.approve` (the test plays the buyer).
+ */
 
 export const OFFER_ID = "6c1a2d3e-4f50-4b0c-8f4e-2a714d5b9f0e";
 export const BUYER = { id: "buyer-1", role: "buyer" as const };
@@ -14,6 +22,7 @@ export const OTHER_BUYER = { id: "buyer-2", role: "buyer" as const };
 export const ADMIN = { id: "admin-1", role: "admin" as const };
 export const BUILDER_ID = "builder-1";
 export const APP_URL = "http://localhost:3000";
+export const WEBHOOK_ID = "WH-TEST-0001";
 
 export function makeOffer(over: Partial<OfferRecord> = {}): OfferRecord {
   return {
@@ -47,6 +56,7 @@ export function makeOffer(over: Partial<OfferRecord> = {}): OfferRecord {
 export function paymentHarness(options: { config?: PayPalConfig; offer?: Partial<OfferRecord> } = {}) {
   let t = new Date("2026-11-07T12:00:00.000Z").getTime();
   const clock = { now: () => new Date(t), advance: (ms: number) => (t += ms) };
+  const config = options.config ?? TEST_PAYPAL_CONFIG;
   const store = createPaymentStore(clock);
   const market = createMarketplaceStore();
   market.merchants.set("platform", { id: "platform", displayName: "UNBUILT Demo Merchant", kind: "platform_demo", onboardingStatus: "not_required", isActive: true });
@@ -54,17 +64,69 @@ export function paymentHarness(options: { config?: PayPalConfig; offer?: Partial
   market.offers.set(OFFER_ID, makeOffer(options.offer));
   const paypal = createFakePayPal();
   const flags = createFlagStore();
+  const refundStore = createRefundStore(store, flags, clock);
+  const webhookStore = createWebhookEventStore();
   const completed: PaymentRecord[] = [];
+  const notifications: { userIds: readonly string[]; type: string; payload: Record<string, unknown> }[] = [];
+  const events: NewClusterEvent[] = [];
+  const audits: AuditEntry[] = [];
+  const orders = fakeOrdersApi(paypal, config);
+
+  const refunds = createRefundService({
+    config,
+    payments: store.repo,
+    refunds: refundStore.repo,
+    paypal: fakeRefundsApi(paypal, config),
+    offers: market.repo,
+    adminIds: async () => [ADMIN.id],
+    notifications: {
+      notify: async (userIds, type, payload) => {
+        notifications.push({ userIds, type, payload });
+      },
+    },
+    events: {
+      insertEvent: async (event) => {
+        events.push(event);
+      },
+    },
+    refreshMetrics: async () => {},
+    audit: async (entry) => {
+      audits.push(entry);
+    },
+    logger: silentLogger,
+    now: clock.now,
+  });
+
   const service = createPaymentService({
-    config: options.config ?? TEST_PAYPAL_CONFIG,
+    config,
     appUrl: APP_URL,
     payments: store.repo,
     offers: market.repo,
-    orders: fakeOrdersApi(paypal, options.config ?? TEST_PAYPAL_CONFIG),
+    orders,
     flags,
     afterCapture: async (payment) => {
       completed.push(payment);
     },
+    refundSide: (payment, source) => refunds.reconcilePayment(payment, source),
+    audit: async (entry) => {
+      audits.push(entry);
+    },
+    logger: silentLogger,
+    now: clock.now,
+  });
+
+  const verifyFetch = fakePayPalFetch(paypal, config);
+  const webhooks = createWebhookService({
+    config: { configured: config.configured, webhookId: WEBHOOK_ID },
+    verify: (headers, rawBody, webhookId) => verifyWebhookSignature(headers, rawBody, webhookId, verifyFetch),
+    events: webhookStore.repo,
+    payments: store.repo,
+    refunds: refundStore.repo,
+    orders,
+    paypalRefunds: fakeRefundsApi(paypal, config),
+    reconcileOrder: (payment, source) => service.reconcileOrder(payment, source),
+    refundOutcome: refunds,
+    flags,
     logger: silentLogger,
     now: clock.now,
   });
@@ -76,9 +138,34 @@ export function paymentHarness(options: { config?: PayPalConfig; offer?: Partial
     return created;
   }
 
+  /** A real checkout through the fake PayPal: create, approve, capture → COMPLETED. */
+  async function capturedPayment(buyer = BUYER) {
+    const { orderId, paymentId } = await approvedCheckout(buyer);
+    await service.capture(buyer, orderId);
+    return (await store.repo.findById(paymentId))!;
+  }
+
   const payment = async (id: string) => (await store.repo.findById(id))!;
 
-  return { clock, store, market, paypal, flags, completed, service, approvedCheckout, payment };
+  return {
+    clock,
+    store,
+    market,
+    paypal,
+    flags,
+    completed,
+    service,
+    refunds,
+    refundStore,
+    webhooks,
+    webhookStore,
+    notifications,
+    events,
+    audits,
+    approvedCheckout,
+    capturedPayment,
+    payment,
+  };
 }
 
 export async function errorOf(promise: Promise<unknown>) {

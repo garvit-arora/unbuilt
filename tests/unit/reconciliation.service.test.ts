@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { PaymentRecord } from "@/server/db/repositories/payments.repo";
 import type { PaymentStatus } from "@/server/payments/state-machine";
-import { BUYER, errorOf, OFFER_ID, paymentHarness } from "../fakes/payment-harness";
+import { ADMIN, BUYER, errorOf, OFFER_ID, paymentHarness } from "../fakes/payment-harness";
+import { TEST_PAYPAL_CONFIG } from "../fakes/paypal";
 
 /** Every row of the design 9.6 table, plus create-order on a stuck CAPTURE_PENDING payment. */
 
@@ -152,10 +153,13 @@ describe("reconciliation.service reconcileOrder (design 9.6)", () => {
   });
 
   it("local REFUND_PENDING with PayPal order COMPLETED → order status ignored (refund side only), no order GET", async () => {
-    const { h, payment, reconcile } = setup("REFUND_PENDING", { status: "COMPLETED", capture: { status: "COMPLETED" } });
+    const { h, payment, reconcile } = setup("REFUND_PENDING", { status: "COMPLETED", capture: { status: "COMPLETED" } }, { paypalCaptureId: "CAPTURE9" });
+    h.refundStore.seed({ paymentId: payment.id, status: "PENDING", amountCents: 1500, paypalRefundId: "REFUND9" });
+    h.paypal.putRefund({ id: "REFUND9", status: "PENDING", captureId: "CAPTURE9" });
     const result = await reconcile();
-    expect(result.outcome).toBe("IGNORED");
+    expect(result).toMatchObject({ outcome: "UNCHANGED", reason: "refund_pending" });
     expect(h.paypal.callsOf("get")).toHaveLength(0);
+    expect(h.paypal.callsOf("getRefund")).toHaveLength(1);
     expect((await h.payment(payment.id)).status).toBe("REFUND_PENDING");
   });
 
@@ -194,5 +198,117 @@ describe("reconciliation.service reconcileOrder (design 9.6)", () => {
     const result = await h.service.createOrder(BUYER, OFFER_ID);
     expect(result).toMatchObject({ paymentId: payment.id, orderId: ORDER });
     expect((await h.payment(payment.id)).status).toBe("APPROVAL_PENDING");
+  });
+});
+
+describe("reconciliation.service REFUND_PENDING row (design 9.6, P1-5)", () => {
+  function refundPending(refund: { paypalRefundId?: string | null; status?: "PENDING" | "REQUESTED" } = {}) {
+    const h = paymentHarness();
+    const payment = h.store.seed({
+      buyerId: BUYER.id,
+      offerId: OFFER_ID,
+      status: "REFUND_PENDING",
+      paypalOrderId: ORDER,
+      paypalCaptureId: "CAPTURE9",
+      completedAt: h.clock.now().toISOString(),
+    });
+    h.paypal.putOrder({ id: ORDER, status: "COMPLETED", customId: payment.id, capture: { id: "CAPTURE9", status: "COMPLETED", value: "15.00", currency: "USD" } });
+    const row = h.refundStore.seed({ paymentId: payment.id, status: refund.status ?? "PENDING", amountCents: 1500, paypalRefundId: refund.paypalRefundId ?? null });
+    const reconcile = async () => h.service.reconcileOrder(await h.payment(payment.id));
+    return { h, payment, row, reconcile };
+  }
+
+  it.each([
+    ["COMPLETED", "COMPLETED", "REFUNDED", 1500],
+    ["FAILED", "FAILED", "COMPLETED", 0],
+    ["CANCELLED", "FAILED", "COMPLETED", 0],
+  ] as const)("PayPal refund %s → apply_refund_outcome %s → payment %s", async (remote, refundStatus, paymentStatus, refunded) => {
+    const { h, payment, row, reconcile } = refundPending({ paypalRefundId: "REFUND9" });
+    h.paypal.putRefund({ id: "REFUND9", status: remote, captureId: "CAPTURE9", ...(remote === "FAILED" ? { reason: "ECHECK" } : {}) });
+    const result = await reconcile();
+    expect(result).toMatchObject({ outcome: "UPDATED", payment: { status: paymentStatus, refundedCents: refunded } });
+    const stored = h.refundStore.rows.find((r) => r.id === row.id)!;
+    expect(stored.status).toBe(refundStatus);
+    if (remote === "FAILED") expect(stored.failureMessage).toBe("ECHECK");
+    if (remote === "CANCELLED") expect(stored.failureMessage).toBe("PayPal refund CANCELLED");
+    expect(h.store.history(payment.id).at(-1)).toMatchObject({ fromStatus: "REFUND_PENDING", toStatus: paymentStatus, source: "reconcile" });
+    expect(h.paypal.callsOf("refund")).toHaveLength(0);
+  });
+
+  it("PayPal refund still PENDING → no change", async () => {
+    const { h, reconcile } = refundPending({ paypalRefundId: "REFUND9" });
+    h.paypal.putRefund({ id: "REFUND9", status: "PENDING", captureId: "CAPTURE9" });
+    expect((await reconcile()).outcome).toBe("UNCHANGED");
+  });
+
+  it("refund PENDING with null paypal_refund_id older than 60 s → resend with the same PayPal-Request-Id → COMPLETED once", async () => {
+    const { h, payment, row, reconcile } = refundPending();
+    h.clock.advance(61_000);
+    const result = await reconcile();
+    expect(result.payment).toMatchObject({ status: "REFUNDED", refundedCents: 1500 });
+    expect(h.paypal.callsOf("refund").map((c) => c.requestId)).toEqual([row.idempotencyKey]);
+    expect(h.audits.map((a) => a.action)).toContain("refund.resend");
+    // A second reconcile has nothing left to do.
+    expect((await h.service.reconcileOrder(await h.payment(payment.id))).outcome).toBe("IGNORED");
+    expect(h.paypal.callsOf("refund")).toHaveLength(1);
+  });
+
+  it("refund PENDING with null paypal_refund_id younger than 60 s → no POST (the original call may be in flight)", async () => {
+    const { h, reconcile } = refundPending();
+    h.clock.advance(60_000);
+    expect(await reconcile()).toMatchObject({ outcome: "UNCHANGED", reason: "refund_in_flight" });
+    expect(h.paypal.callsOf("refund")).toHaveLength(0);
+  });
+
+  it("a resend that fails again bumps updated_at, so concurrent reconciles back off another 60 s", async () => {
+    const { h, row, reconcile } = refundPending();
+    h.clock.advance(61_000);
+    h.paypal.script("refund", { throws: new TypeError("fetch failed") });
+    expect((await reconcile()).outcome).toBe("UNAVAILABLE");
+    expect(h.refundStore.rows.find((r) => r.id === row.id)!.updatedAt).toBe(h.clock.now().toISOString());
+    h.clock.advance(30_000);
+    expect((await reconcile()).reason).toBe("refund_in_flight");
+    expect(h.paypal.callsOf("refund")).toHaveLength(1);
+  });
+
+  it("PayPal refund GET unreachable → UNAVAILABLE, no change", async () => {
+    const { h, payment, reconcile } = refundPending({ paypalRefundId: "REFUND9" });
+    h.paypal.script("getRefund", { status: 503, json: {} });
+    expect((await reconcile()).outcome).toBe("UNAVAILABLE");
+    expect((await h.payment(payment.id)).status).toBe("REFUND_PENDING");
+  });
+
+  it("status polling with reconcile=1 runs the refund side for REFUND_PENDING", async () => {
+    const { h } = refundPending({ paypalRefundId: "REFUND9" });
+    h.paypal.putRefund({ id: "REFUND9", status: "COMPLETED", captureId: "CAPTURE9" });
+    const status = await h.service.status(BUYER, ORDER, true);
+    expect(status.body.status).toBe("REFUNDED");
+  });
+});
+
+describe("payment.service reconcileForAdmin (design 9.6, P1-4)", () => {
+  it("reconciles every payment pending for more than 10 minutes, oldest first, and skips fresh ones", async () => {
+    const h = paymentHarness();
+    const old = h.store.seed({ buyerId: BUYER.id, offerId: OFFER_ID, status: "APPROVAL_PENDING", paypalOrderId: ORDER });
+    h.paypal.putOrder({ id: ORDER, status: "APPROVED", customId: old.id });
+    h.clock.advance(11 * 60 * 1000);
+    const fresh = h.store.seed({ buyerId: "buyer-9", offerId: OFFER_ID, status: "APPROVAL_PENDING", paypalOrderId: "ORDERFRESH1" });
+    h.store.seed({ buyerId: "buyer-8", offerId: OFFER_ID, status: "COMPLETED", paypalOrderId: "ORDERDONE1", updatedAt: "2026-11-01T00:00:00.000Z" });
+
+    const result = await h.service.reconcileForAdmin(ADMIN);
+    expect(result.results).toEqual([{ paymentId: old.id, from: "APPROVAL_PENDING", status: "APPROVED", outcome: "UPDATED", reason: null }]);
+    expect((await h.payment(fresh.id)).status).toBe("APPROVAL_PENDING");
+    expect(h.audits.at(-1)).toMatchObject({ actorId: ADMIN.id, action: "payment.reconcile", metadata: { count: 1, updated: 1 } });
+  });
+
+  it("one payment by id (any status); unknown id → 404; PayPal not configured → 503", async () => {
+    const h = paymentHarness();
+    const done = h.store.seed({ buyerId: BUYER.id, offerId: OFFER_ID, status: "COMPLETED", paypalOrderId: ORDER });
+    expect((await h.service.reconcileForAdmin(ADMIN, done.id)).results).toEqual([
+      { paymentId: done.id, from: "COMPLETED", status: "COMPLETED", outcome: "IGNORED", reason: "stale" },
+    ]);
+    expect(await errorOf(h.service.reconcileForAdmin(ADMIN, "00000000-0000-4000-8000-000000000000"))).toMatchObject({ status: 404 });
+    const off = paymentHarness({ config: { ...TEST_PAYPAL_CONFIG, configured: false } });
+    expect(await errorOf(off.service.reconcileForAdmin(ADMIN))).toMatchObject({ code: "PAYPAL_NOT_CONFIGURED", status: 503 });
   });
 });

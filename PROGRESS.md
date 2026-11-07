@@ -41,6 +41,13 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
   - `/demand/[slug]/journey` (scene 8) from stored rows: original wish (own, else earliest non-demo, else demo), interpretation, cluster formation, buyers and requirements, blueprint, proposals, launched product, Sandbox transactions (viewer's capture ids), closing line; linked from the demand page.
   - Evolution: snapshot diffs by featureId (added/removed/retitled/kind/tags), WTP median over time from `intent_set` events, emerged features and tags, disagreements, open split suggestions, demand trend. Cluster Summarizer (LLM only) runs after a join changed requirements and applies `apply_cluster_change(ai_summary)`.
   - Demand Constellation: `GET /api/demand/constellation` (≤150 nodes, "Load more" by 50 with earlier pages pinned, similarity edges, space), deterministic Fruchterman–Reingold layout seeded by cluster id, `@xyflow/react` map with search focus, side panel (metrics, top requirements, related clusters, 30-day sparkline, Open opportunity, View evolution); `/discover` Grid/Constellation tabs, "Interest by category" bars that set the category filter, home mini-view.
+- **FEAT-006 · Webhooks, reconciliation admin, refunds** (plan items 20–21, 2026-11-07):
+  - `webhook.service` + `POST /api/webhooks/paypal` (no CSRF/session, raw `request.text()`, 256 KB limit, per-IP rate limit): verification through `verify-webhook-signature` with the raw body embedded byte-for-byte; failed verification → `FAILED/IGNORED` row (never overwrites) + 400; PayPal unreachable → 503 without a row; claim with re-claim of failed-verification, FAILED and >5-minute RECEIVED rows; duplicates → 200. Dispatch takes state only from fresh PayPal GETs: order/capture events go through `reconcileOrder` and are `IGNORED (stale)` for captured or refunded payments; refund events finish refunds via `apply_refund_outcome` (matched by PayPal refund id or `custom_id`) or insert refunds issued in the PayPal dashboard (final status directly, PENDING only without an open refund) and recompute; a refund for a capture the app never recorded locates the order through `GET capture` and reconciles it first; `REVERSED` capture → high `capture_mismatch` flag, nothing inferred.
+  - `POST /api/admin/payments/reconcile` (admin): `{paymentId}` for one payment, `{}` for all payments pending >10 minutes (oldest first, max 50), audited.
+  - `refund.service` + `POST /api/paypal/refunds` (discriminated `request` | `approve` | `reject` | `issue`; non-request actions admin-only): buyer request (eligibility, admins notified, never calls PayPal); approve (eligibility with `excludeRefundId` + `ignoreWindow`, window override audited, payment → `REFUND_PENDING` via `refundSideAllowedFrom`, refund → `PENDING`, PayPal refund with the refund's own `PayPal-Request-Id` and `custom_id`, amount omitted only for a full refund); retry of a refund stuck without PayPal id resends the same request id; PENDING with a PayPal id only reads PayPal; reject with a note; admin issue (409 when a request is open, nothing inserted). Completion only through `apply_refund_outcome` (sync, webhook, reconcile); event `refund_completed`, metrics refresh, `refund_status_changed` notifications, audit.
+  - `reconcileOrder` now runs the REFUND_PENDING row (GET refund for COMPLETED/FAILED/CANCELLED/PENDING, resend after 60 s), so status polling with `?reconcile=1` and admin reconcile also settle refunds.
+  - Repositories: refunds writes (insert mapping unique violations, conditional review, PayPal id, touch, both RPCs, queue listing), payments `findByCaptureId` / `listStaleInStatuses`; fakes mirror the SQL (open-refund index, `apply_refund_outcome`, `recompute_payment_refunds` incl. the `capture_mismatch` flag); fake PayPal models refunds and capture lookups.
+  - UI: buyer refund box (`RefundForm`) on the receipt of `/products/[id]` and under each own captured payment on `/payments` (terms, window end, refundable amount, earlier refunds, request form); admin refund queue (`RefundQueue`) on `/payments#refund-queue` with Approve and refund / Reject / Retry with PayPal / Check with PayPal (PayPal actions disabled with an explanation when PayPal is not configured). `docs/PAYPAL_SANDBOX.md` sections 5 and 8 and troubleshooting updated.
 
 ## Tested
 
@@ -74,6 +81,11 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
   - `npm run typecheck`, `npm run lint`, `npm run build`: pass.
   - `npx playwright test e2e/demo-journey.full.spec.ts e2e/discover.spec.ts --project=desktop`: 16/16 (all 8 journey tests incl. scene 4 blueprint + Markdown download and scene 8 journey with "0 Sandbox transactions"; constellation node count = API `nodes.length`, panel, Open opportunity, interest-by-category filter, Evolution v2 requirement, home mini-view).
   - Regression: full + p0 + authz + auth specs together: 30/30. `npm run test:integration`: 83/83.
+- FEAT-006 (2026-11-07, details in `.agents/tasks/verification.md`):
+  - `npm test`: 578/578 (adds webhook.service 22, refund.service 17, refund-eligibility 19, reconciliation REFUND_PENDING rows + admin reconcile 11, `payPalValueToCents`; PayPal HTTP is the fake API).
+  - `npm run typecheck`, `npm run lint`, `npm run build`: pass (new routes `/api/webhooks/paypal`, `/api/paypal/refunds`, `/api/admin/payments/reconcile`).
+  - `npx supabase db reset; npm run seed; npm run test:integration`: 87/87 (adds `refunds.test.ts` against the real RPCs, open-refund index and webhook claim).
+  - Regression: `npx playwright test e2e/demo-journey.p0.spec.ts e2e/authz.spec.ts --project=desktop`: 14/14 (`/payments` for buyer, builder and admin with the refund queue). HTTP smoke on `next start`: webhook → 503 `WEBHOOK_NOT_CONFIGURED`, refunds and admin reconcile signed out → 401.
 
 ## Blocked
 
@@ -82,8 +94,10 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 
 ## Incomplete
 
-- P1 (FEAT-006 onward): webhooks (`/api/webhooks/paypal`), admin reconcile, refund workflow (`/api/paypal/refunds`, the REFUND_PENDING reconcile row), admin console, builder comparison table, reviews, notifications bell, docs (ARCHITECTURE, TESTING, DEPLOYMENT).
-- `/payments` for admins shows all payments; the admin transactions tab arrives with the admin console (P1-6).
+- P1 (FEAT-007): admin console, builder comparison table, reviews, notifications bell, docs (ARCHITECTURE, TESTING, DEPLOYMENT).
+- `/payments` for admins shows all payments and the refund queue; the admin Transactions tab (per-payment Reconcile button on `POST /api/admin/payments/reconcile`) and the Refunds tab reuse them in the admin console (P1-6). There is no UI yet for an admin-issued refund (`issue` is API-only until the Transactions tab).
+- Webhooks and refunds against real PayPal Sandbox are untested without credentials (mocked-HTTP unit tests + integration tests with the fake PayPal only); the manual steps are in `docs/PAYPAL_SANDBOX.md` sections 5 and 8.
+- A payment whose capture PayPal reports as `REFUNDED`/`PARTIALLY_REFUNDED` before the app recorded the capture is settled as `CAPTURE_PENDING` + `capture_mismatch` flag (design 9.5 verification requires capture status `COMPLETED`); an admin resolves it.
 - Integrity checks on submit (Agent 6) are not wired yet (P1-6).
 - Constellation local-space edge threshold is 0.30, not the design's 0.35 (0.35 drew no edge for the seeded hash-v1 centroids; max 0.346). To be recorded in `docs/ARCHITECTURE.md` (P1-8).
 - The LLM paths of Agents 3–5 and the Cluster Summarizer are tested with a fake chat API only (no credentials); market analysis has no e2e test (the Evidence tab render is covered by the journey specs).
@@ -97,5 +111,5 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 - [x] FEAT-003 · Metrics, discovery, demand pages, builder marketplace
 - [x] FEAT-004 · PayPal checkout, reconciliation, transactions dashboard, P0 docs (P0 gate passed)
 - [x] FEAT-005 · Demand intelligence P1 (blueprint, journey, evolution, constellation) — milestone "Demo-journey complete"
-- [ ] FEAT-006 · Webhooks, reconciliation admin, refunds
+- [x] FEAT-006 · Webhooks, reconciliation admin, refunds
 - [ ] FEAT-007 · Admin, builder comparison, reviews, notifications, polish, docs, full verification

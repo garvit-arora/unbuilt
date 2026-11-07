@@ -68,6 +68,9 @@ export type AdvanceResult = { applied: boolean; status: PaymentStatus };
 export interface PaymentsRepo {
   findById(id: string): Promise<PaymentRecord | null>;
   findByOrderId(orderId: string): Promise<PaymentRecord | null>;
+  findByCaptureId(captureId: string): Promise<PaymentRecord | null>;
+  /** Payments in `statuses` last updated before `before` (oldest first), for the admin bulk reconcile. */
+  listStaleInStatuses(statuses: readonly PaymentStatus[], before: string, limit: number): Promise<PaymentRecord[]>;
   listForBuyerOffer(buyerId: string, offerId: string): Promise<PaymentRecord[]>;
   /** Inserts a CREATED payment. Null when the buyer already has an open payment for the offer (partial unique index). */
   insert(payment: NewPayment): Promise<PaymentRecord | null>;
@@ -176,6 +179,22 @@ export const supabasePaymentsRepo: PaymentsRepo = {
     const { data, error } = await db().from("payments").select(COLUMNS).eq("paypal_order_id", orderId).maybeSingle();
     if (error) fail("payments lookup failed", error);
     return data ? toPayment(data) : null;
+  },
+  async findByCaptureId(captureId) {
+    const { data, error } = await db().from("payments").select(COLUMNS).eq("paypal_capture_id", captureId).maybeSingle();
+    if (error) fail("payments lookup failed", error);
+    return data ? toPayment(data) : null;
+  },
+  async listStaleInStatuses(statuses, before, limit) {
+    const { data, error } = await db()
+      .from("payments")
+      .select(COLUMNS)
+      .in("status", [...statuses])
+      .lt("updated_at", before)
+      .order("updated_at", { ascending: true })
+      .limit(limit);
+    if (error) fail("payments list failed", error);
+    return data.map(toPayment);
   },
   async listForBuyerOffer(buyerId, offerId) {
     const { data, error } = await db()

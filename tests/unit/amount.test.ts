@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { CreateOrderSchema } from "@/lib/schemas/payments";
 import { AppError } from "@/server/http/errors";
-import { centsToPayPalValue, computeOrderAmount } from "@/server/payments/amount";
+import { centsToPayPalValue, computeOrderAmount, payPalValueToCents } from "@/server/payments/amount";
 import { captureRequestId, createOrderRequestId } from "@/server/payments/idempotency";
 
 describe("amount", () => {
+  it("payPalValueToCents parses PayPal decimal strings without float math and rejects malformed values", () => {
+    expect(["15.00", "0.01", "7.5", "10000", "0.10"].map(payPalValueToCents)).toEqual([1500, 1, 750, 1000000, 10]);
+    expect(["", "1.234", "-1.00", "1e3", " 1.00", 15, null].map(payPalValueToCents)).toEqual([null, null, null, null, null, null, null]);
+  });
+
   it("centsToPayPalValue formats integer cents without float math", () => {
     expect(centsToPayPalValue(1)).toBe("0.01");
     expect(centsToPayPalValue(99)).toBe("0.99");

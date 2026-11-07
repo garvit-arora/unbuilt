@@ -5,7 +5,13 @@ import { paypalFetch as defaultFetch, type PayPalFetch, type PayPalResult } from
 
 export type PayPalMoney = { currency_code: string; value: string };
 
-export type PayPalCapture = { id: string; status: string; amount?: PayPalMoney; custom_id?: string };
+export type PayPalCapture = {
+  id: string;
+  status: string;
+  amount?: PayPalMoney;
+  custom_id?: string;
+  supplementary_data?: { related_ids?: { order_id?: string } };
+};
 
 export type PayPalOrder = {
   id: string;

@@ -48,6 +48,13 @@ export const PAYMENT_STATUS_LABELS: Record<string, string> = {
   REFUNDED: "Refunded",
 };
 
+export const REFUND_STATUS_LABELS: Record<string, string> = {
+  REQUESTED: "Requested, awaiting admin review",
+  REJECTED: "Rejected",
+  PENDING: "Sent to PayPal, pending",
+  COMPLETED: "Refunded",
+  FAILED: "Failed",
+};
 export const PROGRESS_LABELS: Record<string, string> = {
   planning: "Planning",
   in_progress: "In progress",

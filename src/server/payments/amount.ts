@@ -16,6 +16,14 @@ export function computeOrderAmount(offer: { priceCents: number; currency: string
   return { amountCents: offer.priceCents, currency: offer.currency };
 }
 
+/** PayPal decimal string → integer cents without float math ("15.00" → 1500, "7.5" → 750). Null when malformed. */
+export function payPalValueToCents(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(value);
+  if (!m) return null;
+  return Number(m[1]) * 100 + Number((m[2] ?? "").padEnd(2, "0"));
+}
+
 /** Integer cents → PayPal decimal string without float math: 1 → "0.01", 1500 → "15.00". */
 export function centsToPayPalValue(cents: number): string {
   if (!Number.isSafeInteger(cents) || cents < 0) throw new TypeError(`Expected non-negative integer cents, got ${cents}`);

@@ -123,3 +123,50 @@ export type ViewerState = {
   intent: { level: "interested" | "price_qualified"; targetPriceCents: number | null; maximumPriceCents: number | null; status: string } | null;
   votes: Record<string, "explicit" | "inferred">;
 };
+
+/** A refund as its buyer (or an admin) sees it. PayPal ids and idempotency keys are not part of it. */
+export type RefundView = {
+  id: string;
+  amountCents: number;
+  currency: string;
+  status: "REQUESTED" | "REJECTED" | "PENDING" | "COMPLETED" | "FAILED";
+  reason: string;
+  adminNote: string | null;
+  failureMessage: string | null;
+  outsideUnbuilt: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Refund area of a captured purchase (design 9.7): terms, remaining amount, eligibility and earlier refunds. */
+export type RefundPanelView = {
+  paymentId: string;
+  currency: string;
+  amountCents: number;
+  refundedCents: number;
+  remainingCents: number;
+  refundTerms: string;
+  windowDays: number;
+  windowEndsAt: string | null;
+  eligible: boolean;
+  blockedMessage: string | null;
+  refunds: RefundView[];
+};
+
+/** One row of the admin refund queue. */
+export type AdminRefundItem = RefundView & {
+  paymentId: string;
+  paymentStatus: string;
+  paymentAmountCents: number;
+  refundedCents: number;
+  offerId: string;
+  offerTitle: string;
+  requestedByBuyer: boolean;
+  paypalRefundId: string | null;
+  /** The buyer's refund window has ended; approving overrides it (recorded in the audit log). */
+  windowExpired: boolean;
+  /** PENDING without a PayPal refund id: "Retry with PayPal" re-sends with the same PayPal-Request-Id. */
+  retryable: boolean;
+  /** PENDING with a PayPal refund id: "Check with PayPal" reads its status (no new refund). */
+  checkable: boolean;
+};

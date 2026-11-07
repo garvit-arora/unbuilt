@@ -35,6 +35,13 @@ export const supabaseNotificationsStore: NotificationsStore = {
   },
 };
 
+/** Recipients of admin notifications (e.g. a new refund request). */
+export async function listAdminIds(): Promise<string[]> {
+  const { data, error } = await getServiceClient().from("profiles").select("id").eq("role", "admin");
+  if (error) dbFail("admin lookup failed", error);
+  return data.map((row) => row.id);
+}
+
 export const DIGEST_WINDOW_MS = 24 * 3600 * 1000;
 
 export function createNotificationService(store: NotificationsStore, now: () => Date = () => new Date()) {

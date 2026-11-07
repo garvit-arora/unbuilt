@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createPayPalFetch } from "@/server/paypal/client";
 import type { PayPalConfig } from "@/server/paypal/config";
 import { createOrdersApi } from "@/server/paypal/orders";
+import { createRefundsApi } from "@/server/paypal/refunds";
 import { createTokenCache } from "@/server/paypal/token-cache";
 
 /**
@@ -15,7 +16,7 @@ export type Kind = "token" | "create" | "capture" | "get" | "getCapture" | "refu
 
 export type ScriptedReply = { status: number; json?: unknown; headers?: Record<string, string> } | { throws: Error };
 
-export type FakeCall = { kind: Kind; method: string; url: string; requestId: string | null; body: unknown };
+export type FakeCall = { kind: Kind; method: string; url: string; requestId: string | null; body: unknown; raw: string | null };
 
 type FakeOrder = {
   id: string;
@@ -25,6 +26,16 @@ type FakeOrder = {
   value: string;
   currency: string;
   capture?: { id: string; status: string; value: string; currency: string };
+};
+
+type FakeRefund = {
+  id: string;
+  status: "COMPLETED" | "PENDING" | "FAILED" | "CANCELLED";
+  value: string;
+  currency: string;
+  captureId: string;
+  customId?: string;
+  reason?: string;
 };
 
 export const TEST_PAYPAL_CONFIG: PayPalConfig = {
@@ -66,6 +77,9 @@ export function createFakePayPal() {
   const orders = new Map<string, FakeOrder>();
   const createdByRequestId = new Map<string, string>();
   const capturedByRequestId = new Map<string, { status: number; json: unknown }>();
+  const refunds = new Map<string, FakeRefund>();
+  const refundByRequestId = new Map<string, string>();
+  let newRefundStatus: FakeRefund["status"] = "COMPLETED";
   const scripted = new Map<Kind, ScriptedReply[]>();
   const gates = new Map<Kind, Promise<void>>();
   let seq = 0;
@@ -92,6 +106,25 @@ export function createFakePayPal() {
         },
       ],
     };
+  }
+
+  function refundJson(refund: FakeRefund) {
+    return {
+      id: refund.id,
+      status: refund.status,
+      amount: { currency_code: refund.currency, value: refund.value },
+      ...(refund.customId ? { custom_id: refund.customId } : {}),
+      ...(refund.reason ? { status_details: { reason: refund.reason } } : {}),
+      links: [
+        { rel: "self", href: `https://api-m.sandbox.paypal.com/v2/payments/refunds/${refund.id}`, method: "GET" },
+        { rel: "up", href: `https://api-m.sandbox.paypal.com/v2/payments/captures/${refund.captureId}`, method: "GET" },
+      ],
+    };
+  }
+
+  function findCapture(captureId: string) {
+    for (const order of orders.values()) if (order.capture?.id === captureId) return { order, capture: order.capture };
+    return null;
   }
 
   function defaultReply(kind: Kind, id: string | undefined, body: unknown, requestId: string | null): { status: number; json: unknown } {
@@ -134,6 +167,42 @@ export function createFakePayPal() {
         const order = orders.get(id!);
         return order ? { status: 200, json: orderJson(order) } : { status: 404, json: { name: "RESOURCE_NOT_FOUND", details: [{ issue: "INVALID_RESOURCE_ID" }] } };
       }
+      case "getCapture": {
+        const found = findCapture(id!);
+        if (!found) return { status: 404, json: { name: "RESOURCE_NOT_FOUND", details: [{ issue: "INVALID_RESOURCE_ID" }] } };
+        return {
+          status: 200,
+          json: {
+            id: found.capture.id,
+            status: found.capture.status,
+            amount: { currency_code: found.capture.currency, value: found.capture.value },
+            custom_id: found.order.customId,
+            supplementary_data: { related_ids: { order_id: found.order.id } },
+          },
+        };
+      }
+      case "refund": {
+        if (requestId && refundByRequestId.has(requestId)) return { status: 200, json: refundJson(refunds.get(refundByRequestId.get(requestId)!)!) };
+        const found = findCapture(id!);
+        if (!found) return { status: 404, json: { name: "RESOURCE_NOT_FOUND", details: [{ issue: "INVALID_RESOURCE_ID" }] } };
+        const input = (body ?? {}) as { amount?: { value: string; currency_code: string }; custom_id?: string };
+        seq += 1;
+        const refund: FakeRefund = {
+          id: `REFUND${prefix}${String(seq).padStart(4, "0")}`,
+          status: newRefundStatus,
+          value: input.amount?.value ?? found.capture.value,
+          currency: input.amount?.currency_code ?? found.capture.currency,
+          captureId: found.capture.id,
+          customId: input.custom_id,
+        };
+        refunds.set(refund.id, refund);
+        if (requestId) refundByRequestId.set(requestId, refund.id);
+        return { status: 201, json: refundJson(refund) };
+      }
+      case "getRefund": {
+        const refund = refunds.get(id!);
+        return refund ? { status: 200, json: refundJson(refund) } : { status: 404, json: { name: "RESOURCE_NOT_FOUND", details: [{ issue: "INVALID_RESOURCE_ID" }] } };
+      }
       default:
         throw new Error(`fake PayPal: no default reply for ${kind}; script one`);
     }
@@ -144,6 +213,7 @@ export function createFakePayPal() {
     const url = String(input);
     const headers = new Headers(init?.headers);
     const requestId = headers.get("paypal-request-id");
+    const raw = typeof init?.body === "string" ? init.body : null;
     let body: unknown = init?.body;
     if (typeof body === "string") {
       try {
@@ -153,7 +223,7 @@ export function createFakePayPal() {
       }
     }
     const { kind, id } = classify(method, url);
-    calls.push({ kind, method, url, requestId, body });
+    calls.push({ kind, method, url, requestId, body, raw });
     const gate = gates.get(kind);
     if (gate) await gate;
     const queue = scripted.get(kind);
@@ -195,6 +265,15 @@ export function createFakePayPal() {
       orders.set(full.id, full);
       return full;
     },
+    refunds,
+    /** Status PayPal gives the next new refund (COMPLETED by default; PENDING models e.g. an eCheck refund). */
+    setNewRefundStatus: (status: FakeRefund["status"]) => (newRefundStatus = status),
+    /** A refund that exists at PayPal (e.g. issued in the PayPal dashboard), or a later status of a known one. */
+    putRefund: (refund: Pick<FakeRefund, "id" | "status" | "captureId"> & Partial<FakeRefund>) => {
+      const full: FakeRefund = { value: "15.00", currency: "USD", ...refunds.get(refund.id), ...refund };
+      refunds.set(full.id, full);
+      return full;
+    },
     /** Holds every call of `kind` until the returned function is called. */
     hold: (kind: Kind) => {
       let release!: () => void;
@@ -209,10 +288,20 @@ export function createFakePayPal() {
 
 export type FakePayPal = ReturnType<typeof createFakePayPal>;
 
+/** Real token cache + PayPal client wired to the fake transport. */
+export function fakePayPalFetch(fake: FakePayPal, config: PayPalConfig = TEST_PAYPAL_CONFIG) {
+  const tokens = createTokenCache({ config, fetchImpl: fake.fetchImpl, logger: silentLogger });
+  return createPayPalFetch({ config, tokens, fetchImpl: fake.fetchImpl, logger: silentLogger });
+}
+
 /** Real token cache + client + orders API wired to the fake transport. */
 export function fakeOrdersApi(fake: FakePayPal, config: PayPalConfig = TEST_PAYPAL_CONFIG) {
-  const tokens = createTokenCache({ config, fetchImpl: fake.fetchImpl, logger: silentLogger });
-  return createOrdersApi(createPayPalFetch({ config, tokens, fetchImpl: fake.fetchImpl, logger: silentLogger }));
+  return createOrdersApi(fakePayPalFetch(fake, config));
+}
+
+/** Real token cache + client + refunds API wired to the fake transport. */
+export function fakeRefundsApi(fake: FakePayPal, config: PayPalConfig = TEST_PAYPAL_CONFIG) {
+  return createRefundsApi(fakePayPalFetch(fake, config));
 }
 
 export const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
