@@ -24,8 +24,10 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
-    { name: "mobile", use: { ...devices["Pixel 7"] } },
+    // Signs in as the demo accounts once and saves their sessions under playwright/.auth (e2e/sessions.ts).
+    { name: "setup", testMatch: /auth\.setup\.ts/, use: { ...devices["Desktop Chrome"] } },
+    { name: "desktop", use: { ...devices["Desktop Chrome"] }, dependencies: ["setup"] },
+    { name: "mobile", use: { ...devices["Pixel 7"] }, dependencies: ["setup"] },
   ],
   webServer: {
     command: "npm run build && npm run start",

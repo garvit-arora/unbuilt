@@ -113,7 +113,7 @@ export function FeatureVoting({ clusterId, slug, features, viewer }: { clusterId
       ) : viewer.isMember ? (
         <form onSubmit={suggest} className="flex flex-col gap-2 sm:flex-row" aria-label="Suggest a requirement">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Suggest a missing requirement" maxLength={120} aria-label="Requirement" />
-          <Button type="submit" variant="outline" disabled={adding || title.trim().length < 3}>
+          <Button type="submit" variant="outline" disabled={adding || title.trim().length < 3} title={title.trim().length < 3 ? "Type a requirement of at least 3 characters first" : undefined}>
             {adding ? <Loader2 className="animate-spin" aria-hidden /> : null}
             Suggest requirement
           </Button>

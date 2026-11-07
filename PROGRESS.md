@@ -86,7 +86,16 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
   - `npm run typecheck`, `npm run lint`, `npm run build`: pass (new routes `/api/webhooks/paypal`, `/api/paypal/refunds`, `/api/admin/payments/reconcile`).
   - `npx supabase db reset; npm run seed; npm run test:integration`: 87/87 (adds `refunds.test.ts` against the real RPCs, open-refund index and webhook claim).
   - Regression: `npx playwright test e2e/demo-journey.p0.spec.ts e2e/authz.spec.ts --project=desktop`: 14/14 (`/payments` for buyer, builder and admin with the refund queue). HTTP smoke on `next start`: webhook → 503 `WEBHOOK_NOT_CONFIGURED`, refunds and admin reconcile signed out → 401.
-- FEAT-007 item 22 (2026-11-07, details in `.agents/tasks/verification.md`):
+- **FEAT-007 item 24 — Polish: loading/error/empty states, mobile nav, dead-control audit, pages e2e** (2026-11-07):
+  - All 11 required `loading.tsx` files present (grid/list/detail/form skeletons via `PageSkeleton`).
+  - All required `error.tsx` files present (`"use client"`, `ErrorState` with "Try again" wired to `retry()`).
+  - Empty states verified on all list pages: `/discover` (per-sort hints + Clear filters), `/builder` (proposals, offers, reviews), `/builder/opportunities`, `/admin` tabs (wishes, transactions, refund queue).
+  - Reduced-motion: `@media (prefers-reduced-motion: reduce)` in `globals.css` gates all CSS transitions/animations globally.
+  - Dead-control audit: zero `href="#"` or missing-href anchors; all permanently-disabled buttons have `title`; PayPal-gated actions hidden or explained; no dead buttons.
+  - Mobile nav sheet (`aria-label="Open navigation"`) triggers Sheet with `aria-label="Mobile"` nav containing all role-aware links.
+  - `e2e/auth.setup.ts` saves demo buyer/builder/admin sessions to `playwright/.auth/`; `.gitignore` covers them.
+  - `e2e/pages.spec.ts` audits 23 pages × 2 projects (desktop + mobile); `playwright.config.ts` has setup project with dependencies.
+  - `npm run test:e2e -- e2e/pages.spec.ts` → **49/49 passed** (3 setup + 23 desktop + 23 mobile).
   - `npm run typecheck`, `npm run lint`, `npm run build`: pass (admin console routes, `/admin` page with 7 tabs, moderation service, integrity analyst fully wired).
   - `npm test`: 611/611 (38 files; adds no new tests — `integrity-analyst.test.ts` and `moderation.service.test.ts` were already present and passing from prior implementations).
   - `npx supabase db reset; npm run seed; npm run test:integration`: 96/96 (9 files; `merge-split.test.ts` passes: memberships moved, votes deduped, source → merged, payments keep status with originalClusterId; split moves chosen links/members, unrelated stay; invalid requests rejected).
@@ -99,7 +108,7 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 
 ## Incomplete
 
-- P1 remaining (FEAT-007 items 24–26): docs (ARCHITECTURE, TESTING, DEPLOYMENT), mobile e2e, full verification run.
+- P1 remaining (FEAT-007 items 25–26): docs (ARCHITECTURE, TESTING, DEPLOYMENT), full verification run.
 - Webhooks and refunds against real PayPal Sandbox are untested without credentials (mocked-HTTP unit tests + integration tests with the fake PayPal only); the manual steps are in `docs/PAYPAL_SANDBOX.md` sections 5 and 8.
 - A payment whose capture PayPal reports as `REFUNDED`/`PARTIALLY_REFUNDED` before the app recorded the capture is settled as `CAPTURE_PENDING` + `capture_mismatch` flag (design 9.5 verification requires capture status `COMPLETED`); an admin resolves it.
 - Constellation local-space edge threshold is 0.30, not the design's 0.35 (0.35 drew no edge for the seeded hash-v1 centroids; max 0.346). To be recorded in `docs/ARCHITECTURE.md` (P1-8).
@@ -114,4 +123,4 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 - [x] FEAT-004 · PayPal checkout, reconciliation, transactions dashboard, P0 docs (P0 gate passed)
 - [x] FEAT-005 · Demand intelligence P1 (blueprint, journey, evolution, constellation) — milestone "Demo-journey complete"
 - [x] FEAT-006 · Webhooks, reconciliation admin, refunds
-- [ ] FEAT-007 · Admin, builder comparison, reviews, notifications, polish, docs, full verification (items 22–23 complete)
+- [ ] FEAT-007 · Admin, builder comparison, reviews, notifications, polish, docs, full verification (items 22–24 complete)

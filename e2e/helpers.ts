@@ -12,6 +12,20 @@ export async function signInAs(page: Page, role: keyof typeof DEMO_NAMES, next =
   await expect(page.getByTestId("user-menu-trigger")).toContainText(DEMO_NAMES[role]);
 }
 
+/** Signs out through the user menu (desktop) or the navigation sheet (below `md`, where the menu is hidden). */
+export async function signOut(page: Page) {
+  const menu = page.getByTestId("user-menu-trigger");
+  if (await menu.isVisible()) {
+    await menu.click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
+  } else {
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Sign out" }).click();
+  }
+  await expect(page.getByTestId("user-menu-trigger")).toHaveCount(0);
+  await expect(page.getByTestId("notification-bell")).toHaveCount(0);
+}
+
 export type ClusterMetricsView = { uniqueInterested: number; priceQualifiedBuyers: number };
 
 /** Current public metrics of a cluster through the API (same session as the page). */

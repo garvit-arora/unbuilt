@@ -220,7 +220,7 @@ export function WishFlow() {
           </div>
         </div>
         <div>
-          <Button type="submit" disabled={busy !== null || rawText.trim().length < 10}>
+          <Button type="submit" disabled={busy !== null || rawText.trim().length < 10} title={rawText.trim().length < 10 ? "Describe your wish in at least 10 characters first" : undefined}>
             {busy === "analyze" ? <Loader2 className="animate-spin" aria-hidden /> : null}
             Analyze
           </Button>
@@ -301,6 +301,7 @@ export function WishFlow() {
                   type="button"
                   variant="outline"
                   disabled={newCapability.trim().length < 3}
+                  title={newCapability.trim().length < 3 ? "Type a capability of at least 3 characters first" : undefined}
                   onClick={() => {
                     patch({ missingCapabilities: [...edited.missingCapabilities, newCapability.trim()] });
                     setNewCapability("");
@@ -342,7 +343,7 @@ export function WishFlow() {
             </p>
           ) : null}
           <div>
-            <Button onClick={findPeople} disabled={busy !== null || edited.title.trim().length < 3}>
+            <Button onClick={findPeople} disabled={busy !== null || edited.title.trim().length < 3} title={edited.title.trim().length < 3 ? "Give the wish a title of at least 3 characters first" : undefined}>
               {busy === "submit" ? <Loader2 className="animate-spin" aria-hidden /> : <ArrowRight aria-hidden />}
               Find my people
             </Button>
@@ -487,6 +488,7 @@ export function WishFlow() {
                           className="size-4 accent-lime"
                           checked={on}
                           disabled={!on && picked.length >= 5}
+                          title={!on && picked.length >= 5 ? "You can pick up to 5 top requirements" : undefined}
                           onChange={() => {
                             setVotesSaved(false);
                             setPicked(on ? picked.filter((id) => id !== f.id) : [...picked, f.id]);
@@ -499,7 +501,7 @@ export function WishFlow() {
                 })}
               </ul>
               <div className="flex items-center gap-3">
-                <Button variant="outline" onClick={saveVotes} disabled={busy !== null || picked.length === 0}>
+                <Button variant="outline" onClick={saveVotes} disabled={busy !== null || picked.length === 0} title={picked.length === 0 ? "Pick at least one requirement first" : undefined}>
                   {busy === "votes" ? <Loader2 className="animate-spin" aria-hidden /> : null}
                   Save top requirements
                 </Button>

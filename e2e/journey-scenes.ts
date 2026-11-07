@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { LOCALPILOT, seedId } from "../scripts/seed-lib/ids";
-import { clusterMetrics, OFFLINE_SLUG, signInAs } from "./helpers";
+import { clusterMetrics, OFFLINE_SLUG, signInAs, signOut } from "./helpers";
 
 /**
  * Demo-journey scenes (design 14) shared by `demo-journey.p0.spec.ts` and `demo-journey.full.spec.ts`. They run in
@@ -155,9 +155,7 @@ export async function paymentsScopes(page: Page) {
   await expect(page.getByTestId("stated-demand")).toContainText("Offline AI coding assistant");
   expect(((await (await page.request.get("/api/analytics/payments")).json()) as { scope: string }).scope).toBe("builder");
 
-  await page.getByTestId("user-menu-trigger").click();
-  await page.getByRole("menuitem", { name: "Sign out" }).click();
-  await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
+  await signOut(page);
   await signInAs(page, "admin", "/payments");
   await expect(page.getByRole("heading", { name: /All payments/ })).toBeVisible();
   await expect(page.getByTestId("completed-value")).toHaveText("$0.00");

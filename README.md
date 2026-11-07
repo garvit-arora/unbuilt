@@ -32,10 +32,10 @@ All payments run in the PayPal **Sandbox** and are labelled "PayPal Sandbox". Th
 ## Architecture
 
 - **One Next.js 16 App Router app** (TypeScript, Tailwind v4, shadcn/ui, Recharts). Route Handlers under `src/app/api` handle every mutation. Each one goes through `route()` (`src/server/http/handler.ts`), which applies the CSRF guard, auth and roles, Postgres-backed rate limits, strict Zod schemas and a uniform error envelope.
-- **Server-only service layer** in `src/server`: `services/*` (demand, matching, cluster, metrics, offer, payment, reconciliation, delivery, analytics), `ai/*` (LLM client, prompts, heuristics, embeddings), `paypal/*` (token cache, REST client, orders, refunds, webhook verification), `payments/*` (pure state machine, amounts, order body, idempotency, refund eligibility) and `db/repositories/*`.
+- **Server-only service layer** in `src/server`: `services/*` (demand, matching, cluster, metrics, blueprint, research, offer, payment, reconciliation, refund, webhook, delivery, review, moderation, admin, analytics), `ai/*` (LLM client, prompts, heuristics, embeddings), `paypal/*` (token cache, REST client, orders, refunds, webhook verification), `payments/*` (pure state machine, amounts, order body, idempotency, refund eligibility) and `db/repositories/*`.
 - **Supabase**: Postgres with pgvector, Auth and row-level security, from the migrations in `supabase/migrations`. The browser only ever holds the anon key. All writes go through the service-role client after the service layer has authorized them.
 - **Money** is integer cents everywhere. **Payment status** changes only through conditional updates, and the `advance_payment` RPC walks valid edges of the state machine. No HTTP route accepts a target status.
-- **Tests**: Vitest unit tests (services with in-memory repositories and a fake PayPal API), Vitest integration tests against local Supabase (RLS, RPCs, seed), and Playwright end-to-end tests against a production build.
+- **Tests**: Vitest unit tests (services with in-memory repositories and a fake PayPal API), Vitest integration tests against local Supabase (RLS, RPCs, merge/split, seed), and Playwright end-to-end tests against a production build in desktop and mobile viewports. Details: [docs/TESTING.md](docs/TESTING.md).
 
 ## Local setup
 
@@ -105,26 +105,46 @@ Step-by-step details and edge cases (cancel, reload, closing the tab after appro
 1. A buyer writes a wish. The interpretation appears with a "Fallback AI" chip when no model is configured.
 2. Matching finds the "Offline AI coding assistant" cluster and lists the shared requirements.
 3. The buyer joins and states $15. The interested and price-qualified counters go up.
-4. Builder blueprint generation (P1, not yet built).
-5. A builder submits a competing proposal.
+4. A builder regenerates the AI blueprint and exports it as Markdown.
+5. A builder submits a competing proposal; the Builders tab compares all proposals side by side.
 6. The platform builder publishes the LocalPilot offer, which becomes "Available".
 7. The buyer pays with PayPal Sandbox. This step needs credentials.
-8. The "wish to product" journey view (P1, not yet built).
+8. The journey page shows the chain from the wish to the Sandbox transaction.
+
+Scene-by-scene instructions and the < 3 minute video script: [docs/DEMO_WALKTHROUGH.md](docs/DEMO_WALKTHROUGH.md).
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): layers, data model, AI pipeline, calibrated matching thresholds, payment state machine, security and RLS, fallbacks, extension points.
+- [docs/TESTING.md](docs/TESTING.md): every test command, prerequisites, the manual Sandbox test.
+- [docs/DEMO_WALKTHROUGH.md](docs/DEMO_WALKTHROUGH.md): the 8 scenes and the video script.
+- [docs/PAYPAL_SANDBOX.md](docs/PAYPAL_SANDBOX.md): Sandbox accounts, REST app, webhooks, refunds, troubleshooting.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): Vercel or Render with hosted Supabase.
+- [PROGRESS.md](PROGRESS.md): feature-completion checklist.
 
 ## Known limitations
 
-- **No credentials ship with the repo.** Without PayPal credentials, checkout is visibly switched off and never simulated. Scene 7 (real Sandbox approval) is a manual test: Sandbox login popups cannot be automated reliably, so the automated tests cover payments with a mocked PayPal API.
-- **Webhooks need a public HTTPS URL** (a deployed preview or a tunnel), so they cannot reach `localhost`. The webhook handler and in-app refunds arrive in the P1 increments. Until then, synchronous capture plus reconciliation (the product page re-checks open orders and the checkout polls while confirming) keep payments correct, and refunds are issued in the PayPal Sandbox dashboard.
-- **Aged bot accounts** are not caught by the formula. Ranking weights distinct people by trust, account age, evidence and duplicate text, so a thousand duplicate submissions cannot outrank fifty genuine people. Accounts older than 24 hours at join time with varied text, or with no text at all, still count. They rely on integrity flags and an admin setting `trust_weight = 0`.
+- **No credentials ship with the repo.** Without PayPal credentials, checkout is visibly switched off and never simulated. Scene 7 (real Sandbox approval) is a manual test: Sandbox login popups cannot be automated reliably, so the automated tests cover payments with a mocked PayPal API. An opt-in Playwright spec exists for anyone with Sandbox credentials.
+- **Webhooks need a public HTTPS URL** (a deployed preview or a tunnel), so they cannot reach `localhost`. Synchronous capture plus reconciliation (the product page re-checks open orders, the checkout polls while confirming, and admins can reconcile) keep payments correct without them.
+- **Aged bot accounts** are not caught by the formula. Ranking weights distinct people by trust, account age, evidence and duplicate text, so a thousand duplicate submissions cannot outrank fifty genuine people. Accounts older than 24 hours at join time with varied text, or with no text at all, still count. The Integrity Analyst flags duplicates, repeated language, bursts of new accounts and price outliers for an admin, who can set `trust_weight`.
 - **Only USD**, and only offers sold through the platform demo merchant can be bought. Other builders' offers are "Listing only".
+- Market research is limited to what users wrote plus clearly labelled AI hypotheses; no external research source is queried.
 - Discovery search is an in-memory word match (fine for up to about 150 clusters), not Postgres full-text search.
 - With fallback AI, interpretation of non-English wishes is weak. Matching still works on local embeddings, and the UI lets the user correct the interpretation.
 
 ## Roadmap
 
-- **P1 (next):** AI product blueprints and market analysis with Markdown export, the wish-to-product journey page, cluster evolution and disagreements, the Demand Constellation graph, PayPal webhooks and the admin reconcile action, the refund workflow (request, admin review, partial and full refunds), the admin console with integrity analysis, builder comparison tables, reviews, notifications, mobile polish and deployment docs.
-- **P2 (later):** continuous public research for market gaps, trend analysis, email notifications, advanced fraud models, PayPal multiparty seller onboarding (so builders get paid directly), recurring billing, forecasting and international currencies.
+P0 and P1 are implemented (see [PROGRESS.md](PROGRESS.md)). **P2 is documented only, not built**, because partial P2 screens would mean unfinished buttons in the product:
 
+- continuous public research for market gaps (a pluggable research provider for the Market Gap Researcher),
+- trend analysis and forecasting,
+- email notifications,
+- advanced fraud models,
+- PayPal multiparty seller onboarding, so builders get paid directly,
+- recurring billing,
+- international currencies.
+
+Where each would plug in is described in [docs/ARCHITECTURE.md › Extension points](docs/ARCHITECTURE.md#9-extension-points-p2-documented-only).
 ## License
 
 MIT, see [LICENSE](LICENSE).

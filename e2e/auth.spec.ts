@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
+import { signOut } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -30,7 +31,7 @@ test.afterAll(async () => {
   if (created) await admin.auth.admin.deleteUser(created.id);
 });
 
-test("sign up through the form, see the display name, sign out", async ({ page }) => {
+test("sign up through the form, see the display name, sign out", async ({ page }, testInfo) => {
   await page.goto("/auth");
   await expect(page.getByRole("heading", { name: "Welcome to UNBUILT" })).toBeVisible();
 
@@ -47,10 +48,10 @@ test("sign up through the form, see the display name, sign out", async ({ page }
   await expect(menu).toContainText(user.displayName);
   await expect(menu).toContainText("Buyer");
 
-  await menu.click();
-  await page.getByRole("menuitem", { name: "Sign out" }).click();
-  await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
-  await expect(page.getByTestId("user-menu-trigger")).toHaveCount(0);
+  await signOut(page);
+  const signIn = page.getByRole("link", { name: "Sign in", exact: true });
+  if (testInfo.project.name === "mobile") await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(signIn).toBeVisible();
 });
 
 test("signed-out /dashboard redirects to /auth?next=/dashboard", async ({ page }) => {
