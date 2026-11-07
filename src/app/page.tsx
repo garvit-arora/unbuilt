@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ConstellationView } from "@/components/constellation/constellation-view";
 import { ClusterCard } from "@/components/demand/cluster-card";
 import { MetricTile } from "@/components/demand/metric-tile";
 import { DemoChip, SandboxBadge } from "@/components/layout/labels";
@@ -6,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/lib/format";
 import { formatCents } from "@/lib/money";
 import { platformCounters } from "@/server/services/analytics.service";
+import { getConstellation } from "@/server/services/constellation.service";
 import { discover } from "@/server/services/discover.service";
 
 const STEPS = [
@@ -16,9 +18,12 @@ const STEPS = [
   { title: "Build & buy", body: "Builders propose and publish; buyers purchase through a real PayPal Sandbox checkout." },
 ];
 
-/** Home (design 11, P0-7): exact spec hero copy, live preview of the top 6 clusters, three separate counters. */
+/**
+ * Home (design 11, P0-7): exact spec hero copy, live preview of the top 6 clusters, three separate counters, and
+ * (P1-2) the Demand Constellation mini-view.
+ */
 export default async function HomePage() {
-  const [top, counters] = await Promise.all([discover({ sort: "highest_demand", limit: 6 }), platformCounters()]);
+  const [top, counters, constellation] = await Promise.all([discover({ sort: "highest_demand", limit: 6 }), platformCounters(), getConstellation()]);
 
   return (
     <div className="flex flex-col">
@@ -85,6 +90,23 @@ export default async function HomePage() {
           </p>
         )}
       </section>
+
+      {constellation.nodes.length ? (
+        <section aria-labelledby="constellation" className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pb-14 sm:px-6">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 id="constellation" className="font-serif text-3xl text-foreground">
+                Demand Constellation
+              </h2>
+              <p className="text-sm text-muted-text">Every cluster as a node sized by interested buyers; edges join semantically related demand. Click a node to open it.</p>
+            </div>
+            <Link href="/discover?view=constellation" className="text-sm text-lime underline-offset-4 hover:underline">
+              Explore the full constellation
+            </Link>
+          </div>
+          <ConstellationView initial={constellation} mode="mini" />
+        </section>
+      ) : null}
 
       <section aria-labelledby="how" className="border-t border-line bg-surface/40">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-14 sm:px-6">

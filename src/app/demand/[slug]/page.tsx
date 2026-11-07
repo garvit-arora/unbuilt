@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { FeatureFrequencyChart, FunnelChart, GrowthChart, WtpHistogram } from "@/components/charts/demand-charts";
+import { BlueprintTab } from "@/components/demand/blueprint-tab";
 import { BuildersPanel } from "@/components/demand/builders-panel";
 import { DemandTabs } from "@/components/demand/demand-tabs";
+import { EvidenceTab } from "@/components/demand/evidence-tab";
+import { EvolutionTab } from "@/components/demand/evolution-tab";
 import { FeatureVoting } from "@/components/demand/feature-voting";
 import { JoinPanel } from "@/components/demand/join-panel";
 import { OverviewPanel } from "@/components/demand/overview-panel";
@@ -12,7 +16,10 @@ import { CATEGORY_COLORS, categoryLabel, type Category } from "@/lib/categories"
 import { formatNumber } from "@/lib/format";
 import { CLUSTER_STATUS_LABELS, label } from "@/lib/labels";
 import { getOptionalSessionUser } from "@/server/auth/guards";
+import { listBlueprints } from "@/server/services/blueprint.service";
 import { getClusterDetail } from "@/server/services/cluster-detail.service";
+import { getEvolution } from "@/server/services/evolution.service";
+import { getEvidence } from "@/server/services/research.service";
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -32,6 +39,8 @@ export default async function DemandPage({ params, searchParams }: Props) {
   const { cluster, metrics } = detail;
   const tab = typeof query.tab === "string" && isDemandTab(query.tab) ? query.tab : "overview";
   const color = CATEGORY_COLORS[cluster.category as Category] ?? "#8a8f98";
+  const isBuilder = detail.viewer.role === "builder" || detail.viewer.role === "admin";
+  const [blueprints, evidence, evolution] = await Promise.all([listBlueprints(cluster.id), getEvidence(cluster.id), getEvolution(cluster, metrics)]);
 
   const panels = {
     overview: <OverviewPanel detail={detail} />,
@@ -57,7 +66,10 @@ export default async function DemandPage({ params, searchParams }: Props) {
       </div>
     ),
     features: <FeatureVoting clusterId={cluster.id} slug={cluster.slug} features={detail.features} viewer={detail.viewer} />,
+    blueprint: <BlueprintTab clusterId={cluster.id} slug={cluster.slug} blueprints={blueprints} canGenerate={isBuilder} signedIn={detail.viewer.signedIn} />,
     builders: <BuildersPanel detail={detail} />,
+    evolution: <EvolutionTab evolution={evolution} />,
+    evidence: <EvidenceTab clusterId={cluster.id} evidence={evidence} canAnalyze={isBuilder} />,
   };
 
   return (
@@ -76,6 +88,9 @@ export default async function DemandPage({ params, searchParams }: Props) {
           </div>
           <h1 className="font-serif text-4xl leading-tight text-foreground sm:text-5xl">{cluster.title}</h1>
           <p className="max-w-2xl text-muted-text">{cluster.description}</p>
+          <Link href={`/demand/${cluster.slug}/journey`} className="w-fit text-sm text-lime underline-offset-4 hover:underline" data-testid="journey-link">
+            Follow the journey from wish to product →
+          </Link>
           <div className="flex flex-wrap gap-6 text-sm">
             <span>
               <span className="font-mono text-xl text-foreground" data-testid="header-interested">

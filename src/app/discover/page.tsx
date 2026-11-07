@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CategoryInterestChart } from "@/components/charts/category-interest";
+import { ConstellationView } from "@/components/constellation/constellation-view";
 import { ClusterCard } from "@/components/demand/cluster-card";
 import { DiscoverFilters } from "@/components/discover/discover-filters";
 import { DemoChip } from "@/components/layout/labels";
 import { Button } from "@/components/ui/button";
 import { DISCOVER_MAX_LIMIT, DISCOVER_SORT_LABELS, DISCOVER_SORTS, parseDiscoverParams } from "@/lib/schemas/discover";
+import { cn } from "@/lib/utils";
+import { platformCounters } from "@/server/services/analytics.service";
+import { getConstellation } from "@/server/services/constellation.service";
 import { discover } from "@/server/services/discover.service";
 
 export const metadata: Metadata = { title: "Discover demand" };
@@ -15,26 +20,64 @@ const EMPTY_HINTS: Record<string, string> = {
   highest_verified: "No cluster has PayPal Sandbox purchases with these filters yet.",
 };
 
-/** Discovery grid (design 11; spec 5). Filters and sort live in the URL; the Constellation tab arrives with P1-2. */
+function ViewTabs({ view }: { view: "grid" | "constellation" }) {
+  const tab = (id: "grid" | "constellation", text: string, href: string) => (
+    <Link
+      href={href}
+      aria-current={view === id ? "page" : undefined}
+      className={cn("rounded-md px-3 py-1.5 text-sm transition-colors", view === id ? "bg-surface-2 text-foreground" : "text-muted-text hover:text-foreground")}
+    >
+      {text}
+    </Link>
+  );
+  return (
+    <nav aria-label="Discovery view" className="flex w-fit gap-1 rounded-lg border border-line bg-surface p-1">
+      {tab("grid", "Grid", "/discover")}
+      {tab("constellation", "Constellation", "/discover?view=constellation")}
+    </nav>
+  );
+}
+
+/** Discovery (design 11; spec 5, 14): Grid with filters and interest by category, or the Demand Constellation. */
 export default async function DiscoverPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const query = parseDiscoverParams(await searchParams);
-  const result = await discover({ ...query, limit: DISCOVER_MAX_LIMIT });
+  const raw = await searchParams;
+  const view = raw.view === "constellation" ? "constellation" : "grid";
+  const header = (anyDemo: boolean) => (
+    <header className="flex flex-col gap-3">
+      <p className="font-mono text-xs uppercase tracking-[0.2em] text-lime">Discover</p>
+      <h1 className="font-serif text-4xl text-foreground sm:text-5xl">What the world is waiting for</h1>
+      <p className="max-w-2xl text-muted-text">
+        Demand clusters formed from people&apos;s wishes. Ranking uses distinct, trust-weighted people, never raw submission counts.
+      </p>
+      {anyDemo ? (
+        <p className="flex items-center gap-2 text-xs text-muted-text">
+          <DemoChip /> Seeded clusters contain synthetic demo activity, labelled on each card.
+        </p>
+      ) : null}
+    </header>
+  );
+
+  if (view === "constellation") {
+    const constellation = await getConstellation();
+    return (
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:px-6">
+        {header(constellation.nodes.some((n) => n.includesDemo))}
+        <ViewTabs view="constellation" />
+        <ConstellationView initial={constellation} />
+      </div>
+    );
+  }
+
+  const query = parseDiscoverParams(raw);
+  const [result, counters] = await Promise.all([discover({ ...query, limit: DISCOVER_MAX_LIMIT }), platformCounters()]);
   const anyDemo = result.items.some((c) => c.includesDemo);
+  const passthrough = Object.fromEntries(Object.entries(query).map(([k, v]) => [k, v === true ? "1" : String(v)]));
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6">
-      <header className="flex flex-col gap-3">
-        <p className="font-mono text-xs uppercase tracking-[0.2em] text-lime">Discover</p>
-        <h1 className="font-serif text-4xl text-foreground sm:text-5xl">What the world is waiting for</h1>
-        <p className="max-w-2xl text-muted-text">
-          Demand clusters formed from people&apos;s wishes. Ranking uses distinct, trust-weighted people, never raw submission counts.
-        </p>
-        {anyDemo ? (
-          <p className="flex items-center gap-2 text-xs text-muted-text">
-            <DemoChip /> Seeded clusters contain synthetic demo activity, labelled on each card.
-          </p>
-        ) : null}
-      </header>
+      {header(anyDemo)}
+      <ViewTabs view="grid" />
+      <CategoryInterestChart rows={counters.interestByCategory} query={passthrough} />
       <DiscoverFilters
         key={JSON.stringify(query)}
         value={query}

@@ -34,6 +34,13 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
   - Checkout UI on `/products/[id]`: server `CheckoutPanel` (draft, receipt + download for buyers, listing only, paused, not configured with a link to the rendered guide at `/docs/paypal-sandbox`, signed out, own offer), client `PayPalCheckout` (wallet-only PayPal button, runtime client id, reconcile once on load, `?paypal=return|cancel` handling with `router.replace`, Complete payment, Confirming with 20 × 3 s polling then "Still confirming" + Check again, success only from a server-reported capture).
   - `/payments` (financial summary per spec 8J for buyer/builder/admin scope, all labelled "PayPal Sandbox"; separate stated-demand table with WTP and estimates; my payments with status history; builder sales / admin all payments; value-per-cluster chart), dashboard "My purchases" from real payments, header "Payments" link.
   - `README.md` (all spec §23 topics) and `docs/PAYPAL_SANDBOX.md`; e2e global setup resets and seeds the local stack (`E2E_RESET=0` skips).
+- **FEAT-005 · Demand intelligence P1** (plan items 16–19, 2026-11-07) — **milestone "Demo-journey complete"**:
+  - Agents 3, 4, 5 with labelled fallbacks through one LLM-or-fallback runner (`agents/agent-run.ts`): Product Architect (`blueprint-template-v1`: core = required or ≥40% consensus, NFRs from constraint tags, 3-phase plan, stack by product type), Market Gap Researcher (alternatives restricted to names members mentioned, real counts; fallback frequency table, no hypotheses), Commercial Analyst (metrics only; every number must equal a supplied metric, else the templated narrative).
+  - `blueprint.service` (versioned `cluster_blueprints`, pure `toMarkdown` with provenance label), `research.service` (LLM research stored as `evidence_sources(ai_hypothesis, unverified)`), routes `POST /api/ai/blueprint`, `POST /api/ai/market-analysis` (builder|admin, rate limited), `GET /api/demand/[id]/blueprint` (`?format=md` download, `?version=`).
+  - Demand page tabs now Overview, Demand, Features, Blueprint (rendered Markdown without HTML, safe links, export, generate/regenerate for builders, earlier versions), Builders, Evolution, Evidence (anonymized wish excerpts, buyer reference links never fetched, market analysis labelled "AI hypothesis, unverified" or "Fallback AI").
+  - `/demand/[slug]/journey` (scene 8) from stored rows: original wish (own, else earliest non-demo, else demo), interpretation, cluster formation, buyers and requirements, blueprint, proposals, launched product, Sandbox transactions (viewer's capture ids), closing line; linked from the demand page.
+  - Evolution: snapshot diffs by featureId (added/removed/retitled/kind/tags), WTP median over time from `intent_set` events, emerged features and tags, disagreements, open split suggestions, demand trend. Cluster Summarizer (LLM only) runs after a join changed requirements and applies `apply_cluster_change(ai_summary)`.
+  - Demand Constellation: `GET /api/demand/constellation` (≤150 nodes, "Load more" by 50 with earlier pages pinned, similarity edges, space), deterministic Fruchterman–Reingold layout seeded by cluster id, `@xyflow/react` map with search focus, side panel (metrics, top requirements, related clusters, 30-day sparkline, Open opportunity, View evolution); `/discover` Grid/Constellation tabs, "Interest by category" bars that set the category filter, home mini-view.
 
 ## Tested
 
@@ -62,6 +69,11 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
   - `npm test`: 459/459 (adds token-cache, amount, order-body, payment.service, reconciliation.service, delivery.service, checkout-view, paypal-options, payment-metrics; PayPal HTTP is a fake API, never a real call).
   - `npx supabase db reset; npm run test:integration`: 83/83 (adds payments.test.ts against the real `advance_payment` RPC).
   - `npm run test:e2e -- --project=desktop e2e/demo-journey.p0.spec.ts e2e/discover.spec.ts e2e/authz.spec.ts e2e/auth.spec.ts`: 27/27 (journey scenes 1–3, 5, 6, not-configured checkout with 503 from `POST /api/paypal/orders`, `/payments` for buyer, builder and admin).
+- FEAT-005 (2026-11-07, details in `.agents/tasks/verification.md`):
+  - `npm test`: 508/508 (adds blueprint, commercial-analyst, market-gap, evolution, constellation-layout; cluster-join covers the Summarizer).
+  - `npm run typecheck`, `npm run lint`, `npm run build`: pass.
+  - `npx playwright test e2e/demo-journey.full.spec.ts e2e/discover.spec.ts --project=desktop`: 16/16 (all 8 journey tests incl. scene 4 blueprint + Markdown download and scene 8 journey with "0 Sandbox transactions"; constellation node count = API `nodes.length`, panel, Open opportunity, interest-by-category filter, Evolution v2 requirement, home mini-view).
+  - Regression: full + p0 + authz + auth specs together: 30/30. `npm run test:integration`: 83/83.
 
 ## Blocked
 
@@ -70,9 +82,11 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 
 ## Incomplete
 
-- P1 (FEAT-005 onward): blueprints, journey page, evolution, constellation, webhooks (`/api/webhooks/paypal`), admin reconcile, refund workflow (`/api/paypal/refunds`, the REFUND_PENDING reconcile row), admin console, reviews, notifications bell, docs (ARCHITECTURE, TESTING, DEPLOYMENT).
+- P1 (FEAT-006 onward): webhooks (`/api/webhooks/paypal`), admin reconcile, refund workflow (`/api/paypal/refunds`, the REFUND_PENDING reconcile row), admin console, builder comparison table, reviews, notifications bell, docs (ARCHITECTURE, TESTING, DEPLOYMENT).
 - `/payments` for admins shows all payments; the admin transactions tab arrives with the admin console (P1-6).
-- Integrity checks on submit (Agent 6) and the Cluster Summarizer are not wired yet (P1-6 / P1-3b). `disagreements()` is implemented and tested but shown only with the Evolution tab (P1-3b).
+- Integrity checks on submit (Agent 6) are not wired yet (P1-6).
+- Constellation local-space edge threshold is 0.30, not the design's 0.35 (0.35 drew no edge for the seeded hash-v1 centroids; max 0.346). To be recorded in `docs/ARCHITECTURE.md` (P1-8).
+- The LLM paths of Agents 3–5 and the Cluster Summarizer are tested with a fake chat API only (no credentials); market analysis has no e2e test (the Evidence tab render is covered by the journey specs).
 - Discover/opportunities search is an in-memory word match over title, description, problem and requirements (fine at ≤150 clusters), not Postgres full-text.
 - Admin nav link and pages arrive with P1-6. E2E specs run on the desktop project only; mobile is covered in P1-8.
 
@@ -82,6 +96,6 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 - [x] FEAT-002 · AI core, matching, seed
 - [x] FEAT-003 · Metrics, discovery, demand pages, builder marketplace
 - [x] FEAT-004 · PayPal checkout, reconciliation, transactions dashboard, P0 docs (P0 gate passed)
-- [ ] FEAT-005 · Demand intelligence P1 (blueprint, journey, evolution, constellation)
+- [x] FEAT-005 · Demand intelligence P1 (blueprint, journey, evolution, constellation) — milestone "Demo-journey complete"
 - [ ] FEAT-006 · Webhooks, reconciliation admin, refunds
 - [ ] FEAT-007 · Admin, builder comparison, reviews, notifications, polish, docs, full verification

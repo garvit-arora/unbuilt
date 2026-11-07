@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { ConstraintTag } from "@/lib/constraint-tags";
 import { UUID_RE } from "@/lib/schemas/demand";
+import { clusterSummarizer, type ClusterSummarizer } from "@/server/ai/agents/cluster-summarizer";
 import type { CandidateScore } from "@/server/ai/agents/demand-matcher";
 import { findConflicts, type ConflictPair } from "@/server/ai/constraint-compat";
 import { supabaseRunStore, type RunStore } from "@/server/ai/run-recorder";
@@ -93,6 +94,8 @@ export type ClusterDeps = {
   metrics: MetricsService;
   notifications: NotificationService;
   logger: Logger;
+  /** Cluster Summarizer (LLM only); omitted in tests that do not exercise it. */
+  summarizer?: Pick<ClusterSummarizer, "run">;
 };
 
 export type Actor = { id: string };
@@ -172,10 +175,35 @@ export function createClusterService(deps: ClusterDeps) {
         changes.push(`constraint ${appended.length === 1 ? "tag" : "tags"} ${appended.join(", ")} now shared by at least 30% of linked wishes`);
       }
     }
-    if (Object.keys(patch).length > 0) {
+    const changed = Object.keys(patch).length > 0;
+    if (changed) {
       await clusters.applyChange(cluster.id, patch, "join", `Updated after a join: ${changes.join("; ")}.`);
     }
-    return tags;
+    return { tags, changed };
+  }
+
+  /** Step 6 (LLM only): rewrite description/problem from the current requirements via `apply_cluster_change(ai_summary)`. */
+  async function summarize(clusterId: string, isDemo: boolean, actorId: string) {
+    if (!deps.summarizer) return;
+    const [current, all] = await Promise.all([clusters.findById(clusterId), features.listByCluster(clusterId)]);
+    if (!current) return;
+    const summary = await deps.summarizer.run(
+      {
+        cluster: { id: current.id, title: current.title, description: current.description, problemStatement: current.problemStatement },
+        features: all.filter((f) => f.status === "active" || f.status === "emerging").map((f) => ({ title: f.title, kind: f.kind })),
+        tags: current.constraints.tags,
+      },
+      { actorId },
+    );
+    if (!summary) return;
+    const version = await clusters.applyChange(
+      clusterId,
+      { description: summary.data.description, problem_statement: summary.data.problemStatement },
+      "ai_summary",
+      summary.data.changeSummary,
+      summary.runId,
+    );
+    await clusters.insertEvent({ clusterId, type: "summary_updated", actorId, payload: { version, aiRunId: summary.runId }, isDemo });
   }
 
   /** Step 7: flag (never act) when ≥30% (and ≥3) of members' wishes conflict with the cluster's tags. */
@@ -241,10 +269,11 @@ export function createClusterService(deps: ClusterDeps) {
     const membership = await memberships.get(cluster.id, actor.id);
     const isDemo = membership?.isDemo ?? false;
 
-    const tags = await bestEffort("requirements", () =>
+    const update = await bestEffort("requirements", () =>
       updateRequirementsAndTags(cluster, newlyLinked ? request : null, outcome.createdFeatureIds.length > 0, isDemo, actor.id),
     );
-    if (request) await bestEffort("split_check", () => checkSplit(cluster.id, tags ?? cluster.constraints.tags));
+    if (update?.changed) await bestEffort("summary", () => summarize(cluster.id, isDemo, actor.id));
+    if (request) await bestEffort("split_check", () => checkSplit(cluster.id, update?.tags ?? cluster.constraints.tags));
     if (request && candidate?.band === "review" && (newlyLinked || !outcome.alreadyMember)) {
       await bestEffort("ambiguous_flag", () =>
         clusters.openFlag({
@@ -441,4 +470,5 @@ export const clusterService: ClusterService = createClusterService({
   metrics: metricsService,
   notifications: notificationService,
   logger: defaultLogger,
+  summarizer: clusterSummarizer,
 });

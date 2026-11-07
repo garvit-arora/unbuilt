@@ -71,6 +71,51 @@ export type OfferListItem = {
   isDemo: boolean;
 };
 
+/** A stored `cluster_blueprints` version (design 7.4 Agent 4). `modelName` is the LLM model or the heuristic id. */
+export type BlueprintView = {
+  id: string;
+  clusterId: string;
+  version: number;
+  provider: "llm" | "fallback";
+  modelName: string | null;
+  isDemo: boolean;
+  markdown: string;
+  createdAt: string;
+};
+
+/** Demand Constellation node (design 11): x/y are the layout centre in px, `size` the diameter. */
+export type ConstellationNode = {
+  id: string;
+  slug: string;
+  title: string;
+  category: string;
+  status: string;
+  includesDemo: boolean;
+  uniqueInterested: number;
+  priceQualifiedBuyers: number;
+  paidBuyers: number;
+  completedValueCents: number;
+  wtpMedianCents: number | null;
+  opportunityScore: number;
+  topFeatures: { title: string; mentionPct: number }[];
+  /** Cumulative unique members per day, last 30 days. */
+  sparkline: number[];
+  valueTier: 0 | 1 | 2 | 3;
+  size: number;
+  x: number;
+  y: number;
+};
+
+export type ConstellationEdge = { id: string; source: string; target: string; similarity: number; sharedTags: string[] };
+
+export type ConstellationData = {
+  nodes: ConstellationNode[];
+  edges: ConstellationEdge[];
+  space: "model" | "local";
+  total: number;
+  nextOffset: number | null;
+};
+
 export type ViewerState = {
   signedIn: boolean;
   role: "buyer" | "builder" | "admin" | null;

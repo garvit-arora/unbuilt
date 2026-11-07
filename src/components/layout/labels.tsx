@@ -47,6 +47,18 @@ export function AiGeneratedChip({ className }: ChipProps) {
   );
 }
 
+export function AiHypothesisChip({ className }: ChipProps) {
+  return (
+    <span
+      className={cn(chip, "border-cyan/40 bg-cyan/5 text-cyan", className)}
+      title="Written by a language model from members' wishes only. Not verified research; no sources were checked."
+    >
+      <Sparkles aria-hidden />
+      AI hypothesis, unverified
+    </span>
+  );
+}
+
 export function SandboxBadge({ className }: ChipProps) {
   return (
     <span

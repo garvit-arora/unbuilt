@@ -39,6 +39,23 @@ export function GrowthChart({ series }: { series: { date: string; members: numbe
   );
 }
 
+export function WtpOverTimeChart({ series }: { series: { date: string; n: number; medianCents: number | null }[] }) {
+  const data = series.map((p) => ({ date: p.date, median: p.medianCents === null ? null : p.medianCents / 100, n: p.n }));
+  return (
+    <Frame title="Stated willingness to pay over time" description="Median target price of price-qualified buyers after each day with changes (shown from n=3). Not payments." testId="chart-wtp-time">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+          <CartesianGrid {...GRID} vertical={false} />
+          <XAxis dataKey="date" {...AXIS} minTickGap={32} tickFormatter={(d: string) => d.slice(5)} />
+          <YAxis {...AXIS} tickFormatter={(v: number) => `$${v}`} />
+          <Tooltip {...TOOLTIP} formatter={(v, _name, item) => [v === null ? "n<3" : `$${v} (n=${(item.payload as { n: number }).n})`, "Median"]} />
+          <Line type="stepAfter" dataKey="median" stroke="#38d6e8" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </Frame>
+  );
+}
+
 export function WtpHistogram({ histogram, n }: { histogram: { label: string; count: number }[]; n: number }) {
   return (
     <Frame title="Stated willingness to pay" description={`Target prices of price-qualified buyers (n=${n}). Not payments.`} testId="chart-wtp">

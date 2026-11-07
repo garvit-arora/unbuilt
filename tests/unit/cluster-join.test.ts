@@ -6,7 +6,7 @@ import { createLlmClient } from "@/server/ai/llm-client";
 import { normalizedTitle } from "@/server/ai/text-normalize";
 import { DEFAULT_THRESHOLDS } from "@/server/config/matching";
 import { AppError } from "@/server/http/errors";
-import { buildRequirementsSnapshot, createClusterService } from "@/server/services/cluster.service";
+import { buildRequirementsSnapshot, createClusterService, type ClusterDeps } from "@/server/services/cluster.service";
 import { createFeatureService } from "@/server/services/feature.service";
 import { createMatchingService } from "@/server/services/matching.service";
 import { createNotificationService, type NotificationsStore } from "@/server/services/notification.service";
@@ -21,7 +21,10 @@ const OFFLINE_FEATURES = ["Works fully offline", "Runs local models (e.g. via Ol
 
 const silent = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
-async function setup(tags: ConstraintTag[] = ["deployment_offline", "privacy_no_data_upload", "pricing_low_cost"]) {
+async function setup(
+  tags: ConstraintTag[] = ["deployment_offline", "privacy_no_data_upload", "pricing_low_cost"],
+  options: { summarizer?: ClusterDeps["summarizer"] } = {},
+) {
   const store = createDemandStore();
   const runs = createFakeRunStore();
   const sent: { userId: string; type: string }[] = [];
@@ -60,6 +63,7 @@ async function setup(tags: ConstraintTag[] = ["deployment_offline", "privacy_no_
     metrics,
     notifications: createNotificationService(notificationStore),
     logger: silent,
+    summarizer: options.summarizer,
   });
   const features = createFeatureService({
     clusters: store.repos.clusters,
@@ -282,6 +286,25 @@ describe("votes (design 7.6)", () => {
     await expect(features.addFeature({ id: "stranger" }, cluster.id, { title: "Dark mode" })).rejects.toMatchObject({ status: 403 });
     const added = await features.addFeature({ id: "member" }, cluster.id, { title: "Works on 8 GB RAM laptops" });
     expect(added.feature).toMatchObject({ kind: "nice_to_have", status: "emerging" });
+  });
+
+  it("Cluster Summarizer (LLM) rewrites the description through apply_cluster_change(ai_summary) only when requirements changed", async () => {
+    const run = vi.fn(async () => ({
+      data: { description: "An offline assistant that also fits 8 GB laptops.", problemStatement: "Cloud tools upload code and need big machines.", changeSummary: "Added low-memory laptops." },
+      runId: "run-summary",
+    }));
+    const { store, service, cluster, wish } = await setup(undefined, { summarizer: { run } });
+    const unchanged = await wish("u1", SCENE_1);
+    await service.join({ id: "u1" }, cluster.id, { requestId: unchanged.id });
+    expect(run).not.toHaveBeenCalled();
+
+    const grows = await wish("u2", "I want an offline coding assistant that works on 8 GB RAM laptops");
+    await service.join({ id: "u2" }, cluster.id, { requestId: grows.id });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(store.changes.map((c) => c.source)).toEqual(["join", "ai_summary"]);
+    expect(store.changes.at(-1)).toMatchObject({ patch: { description: "An offline assistant that also fits 8 GB laptops." }, summary: "Added low-memory laptops." });
+    expect(store.clusters.get(cluster.id)!.description).toBe("An offline assistant that also fits 8 GB laptops.");
+    expect(store.events.map((e) => e.type)).toContain("summary_updated");
   });
 });
 

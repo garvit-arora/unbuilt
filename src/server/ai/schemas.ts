@@ -62,6 +62,38 @@ export const BlueprintSchema = z.object({
 
 export type Blueprint = z.infer<typeof BlueprintSchema>;
 
+/** Agent 3 output (design 7.4). Everything it says is an unverified AI hypothesis. */
+export const MarketGapSchema = z.object({
+  alternatives: z
+    .array(z.object({ name: z.string().min(1).max(80), mentionedByCount: z.number().int().min(0), shortcomings: z.array(z.string().max(200)).max(6) }))
+    .max(10),
+  gaps: z.array(z.string().max(300)).max(10),
+  evidenceSummary: z.string().max(1000),
+  uncertainty: z.string().max(400),
+  differentiationHypotheses: z.array(z.string().max(300)).max(8),
+});
+
+export type MarketGap = z.infer<typeof MarketGapSchema>;
+
+/** Agent 5 output (design 7.4). Every number must equal a supplied metric. */
+export const CommercialSchema = z.object({
+  narrative: z.string().max(800),
+  keyNumbers: z.array(z.object({ label: z.string().max(80), value: z.number(), basis: z.string().max(200) })).max(8),
+  uncertainty: z.string().max(400),
+  caveats: z.array(z.string().max(300)).max(6),
+});
+
+export type Commercial = z.infer<typeof CommercialSchema>;
+
+/** Cluster Summarizer output (design 7.4, LLM only). */
+export const ClusterSummarySchema = z.object({
+  description: z.string().min(10).max(600),
+  problemStatement: z.string().min(10).max(400),
+  changeSummary: z.string().min(3).max(300),
+});
+
+export type ClusterSummary = z.infer<typeof ClusterSummarySchema>;
+
 /**
  * The effective intent used for matching and display: `deepMerge(structured_intent, intent_corrections)` where a
  * corrected field replaces the stored one (arrays are replaced, not concatenated), then intra-intent conflicts are

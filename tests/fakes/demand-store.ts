@@ -70,6 +70,9 @@ export function createDemandStore() {
       const c = clusters.get(id)!;
       if (patch.requirements) c.requirements = patch.requirements;
       if (patch.constraints) c.constraints = patch.constraints;
+      if (patch.title) c.title = patch.title;
+      if (patch.description) c.description = patch.description;
+      if (patch.problem_statement) c.problemStatement = patch.problem_statement;
       c.currentVersion += 1;
       changes.push({ clusterId: id, patch: patch as Record<string, unknown>, source, summary });
       return c.currentVersion;

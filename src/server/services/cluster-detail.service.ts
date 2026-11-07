@@ -50,6 +50,18 @@ async function findCluster(ref: string): Promise<ClusterRecord | null> {
   return UUID_RE.test(ref) ? supabaseClustersRepo.findById(ref) : supabaseClustersRepo.findBySlug(ref);
 }
 
+/**
+ * A cluster by uuid or slug as public sub-resources see it (blueprint, evidence, evolution, journey): a merged
+ * cluster resolves to its target once; hidden and archived clusters exist only for admins.
+ */
+export async function findVisibleCluster(ref: string, viewer: Pick<SessionUser, "role"> | null): Promise<ClusterRecord | null> {
+  let cluster = await findCluster(ref);
+  if (cluster?.status === "merged" && cluster.mergedIntoId) cluster = await supabaseClustersRepo.findById(cluster.mergedIntoId);
+  if (!cluster || cluster.status === "merged") return null;
+  if ((cluster.status === "hidden" || cluster.status === "archived") && viewer?.role !== "admin") return null;
+  return cluster;
+}
+
 /** Distinct alternatives named in linked wishes (effective intents), most mentioned first. */
 async function problemIntelligence(clusterId: string) {
   const { data, error } = await getServiceClient()
