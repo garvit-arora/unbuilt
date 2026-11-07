@@ -86,6 +86,11 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
   - `npm run typecheck`, `npm run lint`, `npm run build`: pass (new routes `/api/webhooks/paypal`, `/api/paypal/refunds`, `/api/admin/payments/reconcile`).
   - `npx supabase db reset; npm run seed; npm run test:integration`: 87/87 (adds `refunds.test.ts` against the real RPCs, open-refund index and webhook claim).
   - Regression: `npx playwright test e2e/demo-journey.p0.spec.ts e2e/authz.spec.ts --project=desktop`: 14/14 (`/payments` for buyer, builder and admin with the refund queue). HTTP smoke on `next start`: webhook → 503 `WEBHOOK_NOT_CONFIGURED`, refunds and admin reconcile signed out → 401.
+- FEAT-007 item 22 (2026-11-07, details in `.agents/tasks/verification.md`):
+  - `npm run typecheck`, `npm run lint`, `npm run build`: pass (admin console routes, `/admin` page with 7 tabs, moderation service, integrity analyst fully wired).
+  - `npm test`: 611/611 (38 files; adds no new tests — `integrity-analyst.test.ts` and `moderation.service.test.ts` were already present and passing from prior implementations).
+  - `npx supabase db reset; npm run seed; npm run test:integration`: 96/96 (9 files; `merge-split.test.ts` passes: memberships moved, votes deduped, source → merged, payments keep status with originalClusterId; split moves chosen links/members, unrelated stay; invalid requests rejected).
+  - `npx playwright test e2e/authz.spec.ts --project=desktop`: 13/13 (all admin 401/403 cases, admin can access all 7 tabs, health check 200).
 
 ## Blocked
 
@@ -94,15 +99,12 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 
 ## Incomplete
 
-- P1 (FEAT-007): admin console, builder comparison table, reviews, notifications bell, docs (ARCHITECTURE, TESTING, DEPLOYMENT).
-- `/payments` for admins shows all payments and the refund queue; the admin Transactions tab (per-payment Reconcile button on `POST /api/admin/payments/reconcile`) and the Refunds tab reuse them in the admin console (P1-6). There is no UI yet for an admin-issued refund (`issue` is API-only until the Transactions tab).
+- P1 remaining (FEAT-007 items 23–26): builder comparison table, reviews, notifications bell, docs (ARCHITECTURE, TESTING, DEPLOYMENT), mobile e2e, full verification run.
 - Webhooks and refunds against real PayPal Sandbox are untested without credentials (mocked-HTTP unit tests + integration tests with the fake PayPal only); the manual steps are in `docs/PAYPAL_SANDBOX.md` sections 5 and 8.
 - A payment whose capture PayPal reports as `REFUNDED`/`PARTIALLY_REFUNDED` before the app recorded the capture is settled as `CAPTURE_PENDING` + `capture_mismatch` flag (design 9.5 verification requires capture status `COMPLETED`); an admin resolves it.
-- Integrity checks on submit (Agent 6) are not wired yet (P1-6).
 - Constellation local-space edge threshold is 0.30, not the design's 0.35 (0.35 drew no edge for the seeded hash-v1 centroids; max 0.346). To be recorded in `docs/ARCHITECTURE.md` (P1-8).
 - The LLM paths of Agents 3–5 and the Cluster Summarizer are tested with a fake chat API only (no credentials); market analysis has no e2e test (the Evidence tab render is covered by the journey specs).
 - Discover/opportunities search is an in-memory word match over title, description, problem and requirements (fine at ≤150 clusters), not Postgres full-text.
-- Admin nav link and pages arrive with P1-6. E2E specs run on the desktop project only; mobile is covered in P1-8.
 
 ## Feature-completion checklist
 
@@ -112,4 +114,4 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 - [x] FEAT-004 · PayPal checkout, reconciliation, transactions dashboard, P0 docs (P0 gate passed)
 - [x] FEAT-005 · Demand intelligence P1 (blueprint, journey, evolution, constellation) — milestone "Demo-journey complete"
 - [x] FEAT-006 · Webhooks, reconciliation admin, refunds
-- [ ] FEAT-007 · Admin, builder comparison, reviews, notifications, polish, docs, full verification
+- [ ] FEAT-007 · Admin, builder comparison, reviews, notifications, polish, docs, full verification (item 22 complete)

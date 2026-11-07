@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AdminTabs, isAdminTab, type AdminTabId } from "@/components/admin/admin-tabs";
+import { AdminTabs } from "@/components/admin/admin-tabs";
+import { isAdminTab, type AdminTabId } from "@/components/admin/tabs";
 import { ClusterAdmin } from "@/components/admin/cluster-admin";
 import { FlagList } from "@/components/admin/flag-list";
 import { ProposalReview } from "@/components/admin/proposal-review";

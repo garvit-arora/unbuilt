@@ -90,7 +90,13 @@ function RefundRow({ item, paypalConfigured }: { item: AdminRefundItem; paypalCo
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {paypalAction ? (
-              <Button size="sm" onClick={() => run("approve")} disabled={working || !paypalConfigured} data-testid="refund-approve">
+              <Button
+                size="sm"
+                onClick={() => run("approve")}
+                disabled={working || !paypalConfigured}
+                title={!paypalConfigured ? "PayPal Sandbox is not configured, so refunds cannot be sent" : undefined}
+                data-testid="refund-approve"
+              >
                 {busy === "approve" ? <Loader2 className="animate-spin" aria-hidden /> : null}
                 {paypalAction}
               </Button>

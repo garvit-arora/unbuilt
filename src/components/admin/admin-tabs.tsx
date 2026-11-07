@@ -1,22 +1,7 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-export const ADMIN_TABS = [
-  { id: "moderation", label: "Moderation" },
-  { id: "clusters", label: "Clusters" },
-  { id: "proposals", label: "Proposals" },
-  { id: "transactions", label: "Transactions" },
-  { id: "refunds", label: "Refunds" },
-  { id: "ai-runs", label: "AI runs" },
-  { id: "health", label: "Health" },
-] as const;
-
-export type AdminTabId = (typeof ADMIN_TABS)[number]["id"];
-
-export function isAdminTab(value: string | undefined): value is AdminTabId {
-  return ADMIN_TABS.some((t) => t.id === value);
-}
+import { ADMIN_TABS, type AdminTabId } from "./tabs";
 
 /** Tab strip for `/admin`; the selected tab is mirrored in `?tab=` so links and reloads keep it. */
 export function AdminTabs({ panels, initial, counts }: { panels: Record<AdminTabId, ReactNode>; initial: AdminTabId; counts: Partial<Record<AdminTabId, number>> }) {
