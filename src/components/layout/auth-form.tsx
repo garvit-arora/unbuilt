@@ -1,7 +1,6 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +30,6 @@ function firstErrors(issues: { path: PropertyKey[]; message: string }[]): FieldE
 }
 
 export function AuthForm({ next, demoPassword, initialTab = "sign-in" }: Props) {
-  const router = useRouter();
   const [tab, setTab] = useState(initialTab);
   const [busy, setBusy] = useState(false);
   const [navigating, startTransition] = useTransition();
@@ -45,9 +43,10 @@ export function AuthForm({ next, demoPassword, initialTab = "sign-in" }: Props) 
   const pending = busy || navigating;
 
   function finish() {
+    // A full navigation, not router.replace: the client router may hold a prefetched signed-out redirect for a
+    // protected page linked from the header (e.g. /wish → /auth), which would bounce the user back here.
     startTransition(() => {
-      router.replace(next);
-      router.refresh();
+      window.location.assign(next);
     });
   }
 

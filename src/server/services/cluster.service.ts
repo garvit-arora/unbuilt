@@ -7,13 +7,22 @@ import { findConflicts, type ConflictPair } from "@/server/ai/constraint-compat"
 import { supabaseRunStore, type RunStore } from "@/server/ai/run-recorder";
 import type { RequirementsSnapshot } from "@/server/ai/schemas";
 import { matchFeature, normalizedTitle } from "@/server/ai/text-normalize";
-import { supabaseClustersRepo, type ClusterPatch, type ClusterRecord, type ClustersRepo } from "@/server/db/repositories/clusters.repo";
+import {
+  supabaseClustersRepo,
+  type ClusterPatch,
+  type ClusterRecord,
+  type ClustersRepo,
+  type ClusterStatus,
+} from "@/server/db/repositories/clusters.repo";
+import { dbFail } from "@/server/db/repositories/db-error";
+import { getServiceClient } from "@/server/db/service-client";
 import { supabaseFeaturesRepo, type FeatureRecord, type FeaturesRepo } from "@/server/db/repositories/features.repo";
 import { supabaseMembershipsRepo, type MembershipRecord, type MembershipsRepo } from "@/server/db/repositories/memberships.repo";
 import { supabaseRequestsRepo, type RequestRecord, type RequestsRepo } from "@/server/db/repositories/requests.repo";
 import { AppError } from "@/server/http/errors";
 import { logger as defaultLogger, type Logger } from "@/server/http/logger";
 import { candidateFromRun, matchingService, type MatchingService } from "./matching.service";
+import { recordAudit } from "./audit.service";
 import { metricsService, type ClusterMetrics, type MetricsService } from "./metrics.service";
 import { notificationService, type NotificationService } from "./notification.service";
 
@@ -387,6 +396,40 @@ export function createClusterService(deps: ClusterDeps) {
 }
 
 export type ClusterService = ReturnType<typeof createClusterService>;
+
+/**
+ * Cluster status lifecycle (design 5.3). Automatic steps only move forward:
+ * `emerging → active` (metrics refresh, uniqueInterested ≥ 5), `emerging|active → building` (a proposal starts
+ * building), `emerging|active|building → launched` (an offer is published). Merge/hide/archive are admin actions.
+ */
+export const LIFECYCLE_FROM: Readonly<Record<"active" | "building" | "launched", readonly ClusterStatus[]>> = {
+  active: ["emerging"],
+  building: ["emerging", "active"],
+  launched: ["emerging", "active", "building"],
+};
+
+export function canAdvanceStatus(current: ClusterStatus, target: keyof typeof LIFECYCLE_FROM): boolean {
+  return LIFECYCLE_FROM[target].includes(current);
+}
+
+export type AdvanceClusterStatus = (clusterId: string, target: "building" | "launched", actorId: string | null) => Promise<boolean>;
+
+/** Conditional update (`status in LIFECYCLE_FROM[target]`), so concurrent or repeated calls never move backwards. */
+export const advanceClusterStatus: AdvanceClusterStatus = async (clusterId, target, actorId) => {
+  const { data, error } = await getServiceClient()
+    .from("demand_clusters")
+    .update({ status: target })
+    .eq("id", clusterId)
+    .in("status", [...LIFECYCLE_FROM[target]])
+    .select("id");
+  if (error) dbFail("cluster status update failed", error);
+  const changed = data.length > 0;
+  if (changed) {
+    defaultLogger.info("cluster.status", { clusterId, to: target });
+    await recordAudit({ actorId, action: "cluster.status", entityType: "cluster", entityId: clusterId, metadata: { to: target, automatic: true } });
+  }
+  return changed;
+};
 
 export const clusterService: ClusterService = createClusterService({
   clusters: supabaseClustersRepo,

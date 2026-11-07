@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { getServiceClient } from "@/server/db/service-client";
+import { supabaseClusterHistoryRepo, type ClusterHistoryRepo } from "@/server/db/repositories/cluster-history.repo";
 import { dbFail } from "@/server/db/repositories/db-error";
 import type { Json } from "@/server/db/types";
 import { logger } from "@/server/http/logger";
@@ -267,6 +268,45 @@ export async function refreshCluster(clusterId: string, now: Date = new Date()):
     .eq("id", clusterId);
   if (error) dbFail("metrics cache update failed", error);
   return metrics;
+}
+
+/** The cached metrics if they parse and carry the current METRICS_VERSION, else null (recompute). */
+export function parseCachedMetrics(value: unknown): ClusterMetrics | null {
+  return ClusterMetricsSchema.safeParse(value).success ? (value as ClusterMetrics) : null;
+}
+
+/**
+ * Stale = no valid cache, never refreshed, or refreshed before the cluster's latest event (design 8: every write
+ * that changes metrics records a `cluster_events` row first).
+ */
+export function isMetricsStale(cache: unknown, refreshedAt: string | null, latestEventAt: string | null): boolean {
+  if (!parseCachedMetrics(cache) || !refreshedAt) return true;
+  return latestEventAt !== null && new Date(latestEventAt).getTime() > new Date(refreshedAt).getTime();
+}
+
+export type CachedCluster = { id: string; metricsCache: unknown; metricsRefreshedAt: string | null };
+
+/**
+ * Metrics for a page. Discover/home pass `checkEvents: false` and only recompute an invalid cache; the detail page
+ * passes `checkEvents: true` and refreshes inline when the cache is older than the latest event.
+ */
+export async function getClusterMetrics(
+  cluster: CachedCluster,
+  options: { checkEvents?: boolean; history?: Pick<ClusterHistoryRepo, "latestEventAt"> } = {},
+): Promise<ClusterMetrics | null> {
+  const cached = parseCachedMetrics(cluster.metricsCache);
+  let stale = !cached || !cluster.metricsRefreshedAt;
+  if (!stale && options.checkEvents) {
+    const latest = await (options.history ?? supabaseClusterHistoryRepo).latestEventAt(cluster.id);
+    stale = isMetricsStale(cluster.metricsCache, cluster.metricsRefreshedAt, latest);
+  }
+  if (!stale) return cached;
+  try {
+    return await refreshCluster(cluster.id);
+  } catch (error) {
+    logger.warn("metrics.refresh_failed", { clusterId: cluster.id, error });
+    return cached;
+  }
 }
 
 export type MetricsService = { refreshCluster: (clusterId: string) => Promise<ClusterMetrics | null> };

@@ -20,6 +20,7 @@ import { DEFAULT_THRESHOLDS } from "@/server/config/matching";
 import { getServiceClient, type ServiceClient } from "@/server/db/service-client";
 import type { Database, Json } from "@/server/db/types";
 import { refreshCluster } from "@/server/services/metrics.service";
+import { offerService } from "@/server/services/offer.service";
 import { SEED_CLUSTERS, type SeedCluster } from "./seed-data/clusters";
 import { ensureSeedUser, type SeedAccount } from "./seed-lib/accounts";
 import {
@@ -41,9 +42,15 @@ const HOUR = 3600 * 1000;
 type ClusterStatus = Database["public"]["Enums"]["cluster_status"];
 type JsonValue = NonNullable<Json>;
 
-export type SeedOptions = { resetDemo?: boolean; log?: (message: string) => void; now?: Date };
+export type SeedOptions = { resetDemo?: boolean; publishDemoOffer?: boolean; log?: (message: string) => void; now?: Date };
 
-export type SeedSummary = { clusters: number; users: number; requests: number; reset?: Record<string, unknown> };
+export type SeedSummary = {
+  clusters: number;
+  users: number;
+  requests: number;
+  reset?: Record<string, unknown>;
+  demoOffer?: "published" | "already_published";
+};
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -730,20 +737,37 @@ export async function runSeed(options: SeedOptions = {}): Promise<SeedSummary> {
     await refreshCluster(id, new Date(nowMs));
   }
   summary.clusters = clusterIds.length;
+  if (options.publishDemoOffer) summary.demoOffer = await publishDemoOffer(db, log);
   log(`Done: ${summary.clusters} clusters, ${summary.requests} synthetic requests, ${summary.users} accounts. No payments were created.`);
   return summary;
 }
 
-const KNOWN_FLAGS = new Set(["--reset-demo"]);
+/**
+ * `--publish-demo-offer`: the scene-6 shortcut. Publishes the LocalPilot draft through `offer.service.publish` as
+ * builder@unbuilt.demo, so validation, cluster status, events, notifications and audit run exactly as in the UI.
+ */
+async function publishDemoOffer(db: ServiceClient, log: (m: string) => void): Promise<"published" | "already_published"> {
+  const current = check(await db.from("product_offers").select("availability_status").eq("id", LOCALPILOT.offerId).single(), "LocalPilot offer lookup");
+  const status = current.data?.availability_status;
+  if (status !== "draft") {
+    log(`LocalPilot offer is already ${status}; nothing to publish.`);
+    return "already_published";
+  }
+  const { offer } = await offerService.publish({ id: seedUserId(DEMO_EMAILS.builder), role: "builder" }, LOCALPILOT.offerId);
+  log(`Published the LocalPilot offer: ${offer.availabilityStatus}.`);
+  return "published";
+}
+
+const KNOWN_FLAGS = new Set(["--reset-demo", "--publish-demo-offer"]);
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const unknown = args.filter((a) => !KNOWN_FLAGS.has(a));
   if (unknown.length) {
-    console.error(`Unknown option(s): ${unknown.join(" ")}. Supported: --reset-demo`);
+    console.error(`Unknown option(s): ${unknown.join(" ")}. Supported: --reset-demo, --publish-demo-offer`);
     process.exit(1);
   }
-  runSeed({ resetDemo: args.includes("--reset-demo") })
+  runSeed({ resetDemo: args.includes("--reset-demo"), publishDemoOffer: args.includes("--publish-demo-offer") })
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(`Seed failed: ${error instanceof Error ? error.message : String(error)}`);

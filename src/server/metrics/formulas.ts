@@ -215,6 +215,24 @@ export function featureConsensus(features: readonly FeatureInput[], unique: numb
     .sort((a, b) => b.mentionPct - a.mentionPct || b.explicitPct - a.explicitPct || a.title.localeCompare(b.title));
 }
 
+export type CategoryInterestRow = { category: string; userId: string; isDemo: boolean };
+export type CategoryInterest = { category: string; interested: number; includesDemo: boolean };
+
+/**
+ * "Interest by category" (design 8): distinct users with a membership or active intent in any visible cluster of
+ * the category. A user in two categories counts once in each. Every category in `categories` is returned.
+ */
+export function interestByCategory(rows: readonly CategoryInterestRow[], categories: readonly string[]): CategoryInterest[] {
+  return categories.map((category) => {
+    const inCategory = rows.filter((r) => r.category === category);
+    return {
+      category,
+      interested: new Set(inCategory.map((r) => r.userId)).size,
+      includesDemo: inCategory.some((r) => r.isDemo),
+    };
+  });
+}
+
 export function sampleSize(unique: number): "low" | "medium" | "high" {
   if (unique < 10) return "low";
   if (unique < 50) return "medium";
