@@ -99,7 +99,7 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 
 ## Incomplete
 
-- P1 remaining (FEAT-007 items 23–26): builder comparison table, reviews, notifications bell, docs (ARCHITECTURE, TESTING, DEPLOYMENT), mobile e2e, full verification run.
+- P1 remaining (FEAT-007 items 24–26): docs (ARCHITECTURE, TESTING, DEPLOYMENT), mobile e2e, full verification run.
 - Webhooks and refunds against real PayPal Sandbox are untested without credentials (mocked-HTTP unit tests + integration tests with the fake PayPal only); the manual steps are in `docs/PAYPAL_SANDBOX.md` sections 5 and 8.
 - A payment whose capture PayPal reports as `REFUNDED`/`PARTIALLY_REFUNDED` before the app recorded the capture is settled as `CAPTURE_PENDING` + `capture_mismatch` flag (design 9.5 verification requires capture status `COMPLETED`); an admin resolves it.
 - Constellation local-space edge threshold is 0.30, not the design's 0.35 (0.35 drew no edge for the seeded hash-v1 centroids; max 0.346). To be recorded in `docs/ARCHITECTURE.md` (P1-8).
@@ -114,4 +114,4 @@ Authoritative spec: `.agents/tasks/unbuilt-spec.md`. Each step updates this file
 - [x] FEAT-004 · PayPal checkout, reconciliation, transactions dashboard, P0 docs (P0 gate passed)
 - [x] FEAT-005 · Demand intelligence P1 (blueprint, journey, evolution, constellation) — milestone "Demo-journey complete"
 - [x] FEAT-006 · Webhooks, reconciliation admin, refunds
-- [ ] FEAT-007 · Admin, builder comparison, reviews, notifications, polish, docs, full verification (item 22 complete)
+- [ ] FEAT-007 · Admin, builder comparison, reviews, notifications, polish, docs, full verification (items 22–23 complete)

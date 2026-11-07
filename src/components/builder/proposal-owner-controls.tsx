@@ -151,7 +151,7 @@ export function ProposalOwnerControls({
                 </option>
               ))}
             </select>
-            <Button type="submit" variant="outline" disabled={busy !== null || update.trim().length === 0}>
+            <Button type="submit" variant="outline" disabled={busy !== null || update.trim().length === 0} title={update.trim().length === 0 ? "Write the update first" : undefined}>
               {busy === "update" ? <Loader2 className="animate-spin" aria-hidden /> : null}
               Post update
             </Button>
