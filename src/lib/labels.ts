@@ -36,6 +36,18 @@ export const OFFER_TYPE_LABELS: Record<string, string> = {
   early_access: "Early access",
 };
 
+export const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  CREATED: "Created",
+  APPROVAL_PENDING: "Awaiting PayPal approval",
+  APPROVED: "Approved, not captured",
+  CAPTURE_PENDING: "Confirming with PayPal",
+  COMPLETED: "Completed",
+  FAILED: "Failed",
+  REFUND_PENDING: "Refund pending",
+  PARTIALLY_REFUNDED: "Partially refunded",
+  REFUNDED: "Refunded",
+};
+
 export const PROGRESS_LABELS: Record<string, string> = {
   planning: "Planning",
   in_progress: "In progress",

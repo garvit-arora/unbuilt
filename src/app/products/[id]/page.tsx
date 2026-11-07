@@ -14,8 +14,15 @@ import { getPublicOffer } from "@/server/services/offer.service";
 export const metadata: Metadata = { title: "Product" };
 
 /** Offer detail + disclosure (design 9.9, spec 7 L4): exactly what is sold, by whom, and on which terms. */
-export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProductPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
+  const query = await searchParams;
   if (!UUID_RE.test(id)) notFound();
   const viewer = await getOptionalSessionUser();
   const offer = await getPublicOffer(id, viewer);
@@ -132,7 +139,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           </dl>
           <p className="text-xs text-muted-text">PayPal Sandbox — test money only. Pay with your PayPal Sandbox account. A one-time payment; nothing is charged later.</p>
         </section>
-        <CheckoutPanel offer={offer} viewer={viewer} />
+        <CheckoutPanel offer={offer} viewer={viewer} searchParams={query} />
       </aside>
     </div>
   );

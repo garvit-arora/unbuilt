@@ -5,8 +5,10 @@ import { DashboardIntent } from "@/components/demand/dashboard-intent";
 import { DemoChip, FallbackAiChip, SandboxBadge } from "@/components/layout/labels";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatNumber, formatRelativeTime } from "@/lib/format";
-import { CLUSTER_STATUS_LABELS, label } from "@/lib/labels";
+import { CLUSTER_STATUS_LABELS, label, PAYMENT_STATUS_LABELS } from "@/lib/labels";
+import { formatCents } from "@/lib/money";
 import { getOptionalSessionUser } from "@/server/auth/guards";
+import { listPayments } from "@/server/services/analytics.service";
 import { loadDashboard } from "@/server/services/dashboard.service";
 
 export const metadata: Metadata = { title: "My dashboard" };
@@ -15,7 +17,7 @@ export const metadata: Metadata = { title: "My dashboard" };
 export default async function DashboardPage() {
   const user = await getOptionalSessionUser();
   if (!user) redirect("/auth?next=/dashboard");
-  const data = await loadDashboard(user.id);
+  const [data, purchases] = await Promise.all([loadDashboard(user.id), listPayments(user, "buyer", { limit: 5 })]);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6">
@@ -103,9 +105,31 @@ export default async function DashboardPage() {
         <h2 id="purchases" className="flex items-center gap-2 text-lg font-medium text-foreground">
           My purchases <SandboxBadge />
         </h2>
-        <p className="rounded-xl border border-line bg-surface p-5 text-sm text-muted-text" data-testid="purchases-empty">
-          No purchases yet. Purchases happen on a product page through a real PayPal Sandbox checkout.
-        </p>
+        {purchases.length === 0 ? (
+          <p className="rounded-xl border border-line bg-surface p-5 text-sm text-muted-text" data-testid="purchases-empty">
+            No purchases yet. Purchases happen on a product page through a real PayPal Sandbox checkout.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface" data-testid="my-purchases">
+            {purchases.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Link href={`/products/${p.offerId}`} className="font-medium text-foreground hover:text-lime">
+                    {p.offerTitle}
+                  </Link>
+                  <span className="text-xs text-muted-text">{formatDate(p.completedAt ?? p.createdAt)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-mono text-foreground">{formatCents(p.amountCents, p.currency)}</span>
+                  <span className="rounded-full border border-line px-2 py-0.5 text-xs text-foreground">{label(PAYMENT_STATUS_LABELS, p.status)}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Link className="text-sm text-lime underline-offset-4 hover:underline" href="/payments">
+          All payments and the financial summary
+        </Link>
       </section>
 
       <section aria-labelledby="notifications" className="flex flex-col gap-4">
