@@ -80,6 +80,45 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/*
+ * Light theme override — applied via <html class="light"> on the dashboard route group.
+ * All other pages keep the dark theme. Raw palette: bg #F8F9FA, surface #FFFFFF,
+ * surface-2 #F1F3F5, border #E2E6EA, text #111827, muted #6B7280, accent lime #5B8C00 (darkened for contrast).
+ */
+.light {
+  color-scheme: light;
+  --background: #f8f9fa;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #4f7a00;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f3f5;
+  --secondary-foreground: #111827;
+  --muted: #f1f3f5;
+  --muted-foreground: #6b7280;
+  --accent: #eef4e0;
+  --accent-foreground: #3a5c00;
+  --destructive: #dc2626;
+  --border: #e2e6ea;
+  --input: #e2e6ea;
+  --ring: #4f7a00;
+
+  /* custom semantic tokens used in the app */
+  --color-bg: #f8f9fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f3f5;
+  --color-line: #e2e6ea;
+  --color-text: #111827;
+  --color-muted-text: #6b7280;
+  --color-lime: #4f7a00;
+  --color-cyan: #0891b2;
+  --color-danger: #dc2626;
+  --color-warning: #d97706;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
