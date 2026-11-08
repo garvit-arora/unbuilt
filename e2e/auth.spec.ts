@@ -74,14 +74,21 @@ test("sign in honours ?next= and rejects a wrong password", async ({ page }) => 
   await expect(page.getByTestId("user-menu-trigger")).toContainText(user.displayName);
 });
 
-test("an external ?next= target is ignored", async ({ page }) => {
+test("an external ?next= target is ignored", async ({ page }, testInfo) => {
   await page.goto(`/auth?next=${encodeURIComponent("//evil.example/steal")}`);
   const form = page.getByRole("form", { name: "Sign in" });
   await form.getByLabel("Email").fill(user.email);
   await form.getByLabel("Password").fill(user.password);
   await form.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL((url) => url.host === "localhost:3000" && url.pathname === "/");
-  await expect(page.getByTestId("user-menu-trigger")).toBeVisible();
+  // The user-menu trigger is hidden behind the mobile nav sheet below md. On desktop assert it directly; on
+  // mobile open the sheet first and confirm the signed-in identity shown there.
+  if (testInfo.project.name === "mobile") {
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await expect(page.getByText(`Signed in as ${user.displayName}`)).toBeVisible();
+  } else {
+    await expect(page.getByTestId("user-menu-trigger")).toBeVisible();
+  }
 });
 
 test("demo mode shows the three demo-account buttons", async ({ page }) => {
