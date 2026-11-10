@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PRICE_MAX_CENTS, PRICE_MIN_CENTS } from "@/lib/money";
 import { IntentCorrectionSchema } from "./intent";
+import { IntentSchema } from "./intent";
 
 /** Request bodies of the demand routes (design 6.4 and 12). Objects are strict: unknown keys are rejected. */
 
@@ -34,6 +35,8 @@ export const AnalyzeBodySchema = z
     statedPriceCents: PriceCentsSchema.optional(),
   })
   .strict();
+
+export const WishResearchBodySchema = z.object({ intent: IntentSchema, requestId: z.uuid() }).strict();
 
 export const SubmitBodySchema = z
   .object({

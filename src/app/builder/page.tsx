@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowUpRight, BriefcaseBusiness, FileText, PackageCheck, Star } from "lucide-react";
 import { redirect } from "next/navigation";
 import { BuildersOnly } from "@/components/builder/builders-only";
 import { ClusterCard } from "@/components/demand/cluster-card";
@@ -22,23 +23,28 @@ export default async function BuilderPage() {
   const [data, feedback] = await Promise.all([builderDashboard(user), reviewService.builderFeedback(user.id)]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+    <div className="builder-workspace-page">
+      <header className="builder-workspace-hero">
         <div className="flex flex-col gap-2">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-lime">Builder</p>
-          <h1 className="font-serif text-4xl text-foreground">{user.displayName}</h1>
+          <h1>{user.displayName}&apos;s builder workspace</h1>
+          <p>Prioritize proven demand, manage proposals, and follow every offer from interest to delivery.</p>
         </div>
         <Button asChild variant="outline">
-          <Link href="/builder/opportunities">Browse all opportunities</Link>
+          <Link href="/builder/opportunities">Browse opportunities <ArrowUpRight aria-hidden /></Link>
         </Button>
       </header>
 
-      <section aria-labelledby="recommended" className="flex flex-col gap-4">
-        <h2 id="recommended" className="text-lg font-medium text-foreground">
-          Recommended opportunities
-        </h2>
-        <p className="text-sm text-muted-text">Highest opportunity score{data.proposals.length ? " in the categories you build for" : ""}.</p>
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="builder-summary-grid" aria-label="Builder workspace summary">
+        <article><BriefcaseBusiness aria-hidden /><span>Recommended</span><strong>{formatNumber(data.recommended.length)}</strong><small>ranked opportunities</small></article>
+        <article><FileText aria-hidden /><span>Proposals</span><strong>{formatNumber(data.proposals.length)}</strong><small>submitted by you</small></article>
+        <article><PackageCheck aria-hidden /><span>Offers</span><strong>{formatNumber(data.offers.length)}</strong><small>Sandbox funnels</small></article>
+        <article><Star aria-hidden /><span>Buyer feedback</span><strong>{feedback.averageRating === null ? "—" : feedback.averageRating.toFixed(1)}</strong><small>{formatNumber(feedback.count)} reviews</small></article>
+      </section>
+
+      <section aria-labelledby="recommended" className="builder-workspace-section">
+        <div className="builder-section-heading"><div><span>Where demand is gathering</span><h2 id="recommended">Recommended opportunities</h2><p>Highest opportunity score{data.proposals.length ? " in the categories you build for" : ""}.</p></div><Link href="/builder/opportunities">View all <ArrowUpRight aria-hidden /></Link></div>
+        <ul className="builder-opportunity-grid">
           {data.recommended.map((card) => (
             <li key={card.id}>
               <ClusterCard card={card} />
@@ -47,18 +53,16 @@ export default async function BuilderPage() {
         </ul>
       </section>
 
-      <section aria-labelledby="my-proposals" className="flex flex-col gap-4">
-        <h2 id="my-proposals" className="text-lg font-medium text-foreground">
-          My proposals
-        </h2>
+      <section aria-labelledby="my-proposals" className="builder-workspace-section">
+        <div className="builder-section-heading"><div><span>Your responses</span><h2 id="my-proposals">My proposals</h2></div></div>
         {data.proposals.length === 0 ? (
           <p className="rounded-xl border border-line bg-surface p-5 text-sm text-muted-text">
             No proposals yet. Open a demand cluster and use “Submit proposal” on its Builders tab.
           </p>
         ) : (
-          <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+          <ul className="builder-proposal-grid">
             {data.proposals.map((p) => (
-              <li key={p.id} className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <li key={p.id}>
                 <div className="flex flex-col gap-0.5">
                   <Link href={`/proposals/${p.id}`} className="font-medium text-foreground hover:text-lime">
                     {p.title}
@@ -82,14 +86,12 @@ export default async function BuilderPage() {
         )}
       </section>
 
-      <section aria-labelledby="my-offers" className="flex flex-col gap-4">
-        <h2 id="my-offers" className="flex items-center gap-2 text-lg font-medium text-foreground">
-          My offers <SandboxBadge />
-        </h2>
+      <section aria-labelledby="my-offers" className="builder-workspace-section">
+        <div className="builder-section-heading"><div><span>Interest to purchase</span><h2 id="my-offers">My offers <SandboxBadge /></h2></div></div>
         {data.offers.length === 0 ? (
           <p className="rounded-xl border border-line bg-surface p-5 text-sm text-muted-text">No offers yet. Create one from a proposal page.</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+          <div className="builder-offers-table">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="text-xs text-muted-text">
                 <tr className="border-b border-line">
@@ -132,8 +134,8 @@ export default async function BuilderPage() {
         )}
       </section>
 
-      <section aria-labelledby="buyer-feedback" className="flex flex-col gap-4" data-testid="buyer-feedback">
-        <h2 id="buyer-feedback" className="flex flex-wrap items-center gap-2 text-lg font-medium text-foreground">
+      <section aria-labelledby="buyer-feedback" className="builder-workspace-section" data-testid="buyer-feedback">
+        <h2 id="buyer-feedback" className="builder-feedback-title">
           Buyer feedback
           {feedback.averageRating !== null ? (
             <span className="text-sm font-normal text-muted-text">
@@ -146,7 +148,7 @@ export default async function BuilderPage() {
             No reviews yet. Buyers can review an offer after a completed PayPal Sandbox purchase.
           </p>
         ) : (
-          <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+          <ul className="builder-feedback-list">
             {feedback.reviews.map((r) => (
               <li key={r.id} className="flex flex-col gap-1 p-4">
                 <span className="text-xs text-muted-text">

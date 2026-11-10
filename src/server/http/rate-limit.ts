@@ -4,10 +4,13 @@ import { getServiceClient } from "@/server/db/service-client";
 
 /** Rate-limit buckets (design 6.3). Keys are `<bucket>:<userId or ipHash>`. */
 export const RATE_LIMITS = {
+  "account:role": { limit: 10, windowSeconds: 600 },
   "ai:analyze": { limit: 10, windowSeconds: 600 },
+  "ai:wish-research": { limit: 5, windowSeconds: 600 },
   "demand:submit": { limit: 10, windowSeconds: 600 },
   "ai:blueprint": { limit: 5, windowSeconds: 600 },
   "ai:market-analysis": { limit: 5, windowSeconds: 600 },
+    "ai:integrity": { limit: 5, windowSeconds: 600 },
   "ai:match": { limit: 5, windowSeconds: 600 },
   "paypal:orders": { limit: 10, windowSeconds: 600 },
   "paypal:capture": { limit: 20, windowSeconds: 600 },

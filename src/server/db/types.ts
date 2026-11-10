@@ -347,6 +347,32 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"integrity_submissions": {
+                  Row: {
+                    "builder_id": string,"created_at": string,"demo_url": string | null,"emailed_at": string | null,"evaluated_at": string | null,"evidence": NonNullable<Json>,"id": string,"notes": string,"project_url": string,"proposal_id": string,"report": Json | null,"repository_url": string | null,"score": number | null,"status": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "builder_id": string,"created_at"?: string,"demo_url"?: string | null,"emailed_at"?: string | null,"evaluated_at"?: string | null,"evidence"?: NonNullable<Json>,"id"?: string,"notes"?: string,"project_url": string,"proposal_id": string,"report"?: Json | null,"repository_url"?: string | null,"score"?: number | null,"status"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "builder_id"?: string,"created_at"?: string,"demo_url"?: string | null,"emailed_at"?: string | null,"evaluated_at"?: string | null,"evidence"?: NonNullable<Json>,"id"?: string,"notes"?: string,"project_url"?: string,"proposal_id"?: string,"report"?: Json | null,"repository_url"?: string | null,"score"?: number | null,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "integrity_submissions_builder_id_fkey"
+      columns: ["builder_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "integrity_submissions_proposal_id_fkey"
+      columns: ["proposal_id"]
+isOneToOne: false
+      referencedRelation: "product_proposals"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"merchant_accounts": {
                   Row: {
                     "created_at": string,"display_name": string,"environment": string,"id": string,"is_active": boolean,"kind": string,"onboarding_status": string,"paypal_merchant_id": string | null
@@ -718,6 +744,44 @@ isOneToOne: false
                   }
                   Relationships: [
                     
+                  ]
+                },"wish_commitments": {
+                  Row: {
+                    "accepted_at": string | null,"accepted_proposal_id": string | null,"amount_cents": number,"buyer_id": string,"cluster_id": string,"completed_at": string | null,"created_at": string,"currency": string,"demand_request_id": string,"expires_at": string,"id": string,"paypal_capture_id": string | null,"paypal_order_id": string | null,"paypal_refund_id": string | null,"refund_reason": string | null,"refunded_at": string | null,"status": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accepted_at"?: string | null,"accepted_proposal_id"?: string | null,"amount_cents"?: number,"buyer_id": string,"cluster_id": string,"completed_at"?: string | null,"created_at"?: string,"currency"?: string,"demand_request_id": string,"expires_at"?: string,"id"?: string,"paypal_capture_id"?: string | null,"paypal_order_id"?: string | null,"paypal_refund_id"?: string | null,"refund_reason"?: string | null,"refunded_at"?: string | null,"status"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "accepted_at"?: string | null,"accepted_proposal_id"?: string | null,"amount_cents"?: number,"buyer_id"?: string,"cluster_id"?: string,"completed_at"?: string | null,"created_at"?: string,"currency"?: string,"demand_request_id"?: string,"expires_at"?: string,"id"?: string,"paypal_capture_id"?: string | null,"paypal_order_id"?: string | null,"paypal_refund_id"?: string | null,"refund_reason"?: string | null,"refunded_at"?: string | null,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "wish_commitments_accepted_proposal_id_fkey"
+      columns: ["accepted_proposal_id"]
+isOneToOne: false
+      referencedRelation: "product_proposals"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "wish_commitments_buyer_id_fkey"
+      columns: ["buyer_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "wish_commitments_cluster_id_fkey"
+      columns: ["cluster_id"]
+isOneToOne: false
+      referencedRelation: "demand_clusters"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "wish_commitments_demand_request_id_fkey"
+      columns: ["demand_request_id"]
+isOneToOne: false
+      referencedRelation: "demand_requests"
+      referencedColumns: ["id"]
+    }
                   ]
                 }
           }

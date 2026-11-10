@@ -1,5 +1,5 @@
 "use client";
-import { Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -68,7 +68,8 @@ export function DiscoverFilters({
   const numberOrUndefined = (v: string) => (v === "" ? undefined : Number(v));
 
   return (
-    <div className={cn("flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 transition-opacity", pending && "opacity-70")} aria-busy={pending}>
+    <div className={cn("discover-filter-panel relative flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 transition-opacity", pending && "opacity-80")} aria-busy={pending}>
+      {pending ? <div className="filter-loading" role="status"><Loader2 className="animate-spin" aria-hidden /><span>Updating results…</span></div> : null}
       {mode === "discover" ? (
         <form onSubmit={submitSearch} className="flex gap-2" role="search">
           <div className="relative flex-1">

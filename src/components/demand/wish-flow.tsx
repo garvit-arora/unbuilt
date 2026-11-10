@@ -1,24 +1,40 @@
 "use client";
-import { ArrowRight, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, Loader2, Plus, X } from "lucide-react";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { CommitmentCheckout } from "@/components/checkout/commitment-checkout";
 import { AiGeneratedChip, FallbackAiChip } from "@/components/layout/labels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { LatticeLoader } from "@/components/ui/lattice-loader";
+import { WishPromptBar } from "@/components/ui/wish-prompt-bar";
 import { api, ApiError, errorMessage } from "@/lib/api-client";
 import { CATEGORIES, CATEGORY_LABELS } from "@/lib/categories";
 import { CONSTRAINT_TAGS, CONSTRAINT_TAG_LABELS, constraintTagLabel, type ConstraintTag } from "@/lib/constraint-tags";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { formatCentsShort, parseDollarsToCents } from "@/lib/money";
 import type { Intent, IntentCorrection } from "@/lib/schemas/intent";
-import type { FeatureView, ViewerState } from "@/lib/views";
+import type { ClusterCardData, FeatureView, ViewerState } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { IntentEditor, type IntentMetrics } from "./intent-editor";
 
 type Provider = "llm" | "fallback";
 type AnalyzeResult = { analysisRunId: string; intent: Intent; provider: Provider; fallbackReason?: string };
+type ResearchResult = {
+  grounding: "web";
+  model: string;
+  report: {
+    verdict: string;
+    existingSolutions: { name: string; overlap: string; gap: string; sourceUrls: string[] }[];
+    opportunities: string[];
+    risks: string[];
+    followUpQuestions: string[];
+    uncertainty: string;
+  };
+  sources: { title: string; url: string; snippet: string }[];
+};
 type Candidate = {
   clusterId: string;
   slug: string;
@@ -46,6 +62,16 @@ const RELATION_LABELS: Record<Intent["priceReferences"][number]["relation"], str
 };
 
 const EDITABLE = ["title", "category", "problemSummary", "desiredOutcome", "targetAudience", "missingCapabilities", "constraintTags"] as const;
+// Claude Code's playful activity vocabulary, adapted as one-word progressive labels for UNBUILT's loader.
+const RESEARCH_STAGES = [
+  "Accomplishing", "Actioning", "Actualizing", "Baking", "Booping", "Brewing", "Calculating", "Cerebrating",
+  "Churning", "Clauding", "Coalescing", "Cogitating", "Computing", "Concocting", "Considering", "Cooking",
+  "Crafting", "Creating", "Crunching", "Deliberating", "Determining", "Doing", "Effecting", "Finagling", "Forging",
+  "Forming", "Generating", "Hatching", "Herding", "Honking", "Hustling", "Ideating", "Inferring", "Manifesting",
+  "Marinating", "Mulling", "Mustering", "Musing", "Noodling", "Percolating", "Pondering", "Processing", "Puttering",
+  "Reticulating", "Ruminating", "Schmoozing", "Shucking", "Simmering", "Smooshing", "Spinning", "Stewing",
+  "Synthesizing", "Thinking", "Transmuting", "Vibe checking", "Working",
+];
 
 /** Only the fields the user actually changed (design 6.4 `IntentCorrectionSchema`). */
 function corrections(original: Intent, edited: Intent): IntentCorrection | undefined {
@@ -74,12 +100,20 @@ function Score({ label, value }: { label: string; value: number }) {
  * `/wish` (design 11): wish → editable interpretation with provider badge → "Find my people" → candidate cards with
  * explanation and score breakdown → join / incompatible choices / new cluster → requirements, WTP and level.
  */
-export function WishFlow() {
+export function WishFlow({ researchConfigured, paypalClientId }: { researchConfigured: boolean; paypalClientId: string | null }) {
+  const [screen, setScreen] = useState<1 | 2 | 3 | 4>(1);
   const [rawText, setRawText] = useState("");
   const [referenceUrl, setReferenceUrl] = useState("");
   const [price, setPrice] = useState("");
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
   const [edited, setEdited] = useState<Intent | null>(null);
+  const [research, setResearch] = useState<ResearchResult | null>(null);
+  const [researchPhase, setResearchPhase] = useState<"idle" | "working" | "done" | "error">("idle");
+  const [researchStage, setResearchStage] = useState(0);
+  const [paymentVerified, setPaymentVerified] = useState(false);
+  const markPaymentVerified = useCallback(() => setPaymentVerified(true), []);
+  const [suggestions, setSuggestions] = useState<ClusterCardData[]>([]);
+  const [suggestionsFor, setSuggestionsFor] = useState<string | null>(null);
   const [newCapability, setNewCapability] = useState("");
   const [submitted, setSubmitted] = useState<SubmitResult | null>(null);
   const [incompatible, setIncompatible] = useState<{ clusterId: string; conflicts: [string, string][] } | null>(null);
@@ -91,6 +125,31 @@ export function WishFlow() {
   const [error, setError] = useState<string | null>(null);
 
   const statedPriceCents = price.trim() ? parseDollarsToCents(price) : null;
+
+  useEffect(() => {
+    if (researchPhase !== "working") return;
+    let timeout: number | undefined;
+    const schedule = () => {
+      timeout = window.setTimeout(() => {
+        setResearchStage((current) => (current + 1) % RESEARCH_STAGES.length);
+        schedule();
+      }, 5_000 + Math.floor(Math.random() * 3_001));
+    };
+    schedule();
+    return () => { if (timeout !== undefined) window.clearTimeout(timeout); };
+  }, [researchPhase]);
+
+  useEffect(() => {
+    if (screen !== 2 || !edited?.category) return;
+    const controller = new AbortController();
+    const category = edited.category;
+    api<{ items: ClusterCardData[] }>(`/api/demand/discover?category=${encodeURIComponent(category)}&sort=highest_demand&limit=3`, { signal: controller.signal })
+      .then((result) => { setSuggestions(result.items); setSuggestionsFor(category); })
+      .catch((caught) => { if ((caught as Error).name !== "AbortError") { setSuggestions([]); setSuggestionsFor(category); } });
+    return () => controller.abort();
+  }, [screen, edited?.category]);
+
+  const suggestionsLoading = screen === 2 && Boolean(edited?.category) && suggestionsFor !== edited?.category;
 
   function input() {
     return {
@@ -119,21 +178,48 @@ export function WishFlow() {
       setError("Enter the price in dollars, e.g. 20.");
       return;
     }
+    setAnalysis(null);
+    setEdited(null);
+    setScreen(2);
     const result = await run("analyze", () => api<AnalyzeResult>("/api/demand/analyze", { body: input() }));
-    if (!result) return;
+    if (!result) { setScreen(1); return; }
     setAnalysis(result);
     setEdited(result.intent);
     setSubmitted(null);
+    setResearch(null);
+    setResearchPhase("idle");
     setJoined(null);
     setIncompatible(null);
+    setScreen(2);
+  }
+
+  async function researchMarket(intent: Intent, requestId: string) {
+    setError(null);
+    setBusy("research");
+    setResearchStage(0);
+    setResearchPhase("working");
+    try {
+      const result = await api<ResearchResult>("/api/demand/research", { body: { intent, requestId } });
+      setResearch(result);
+      setResearchPhase("done");
+    } catch (caught) {
+      setError(errorMessage(caught));
+      setResearchPhase("error");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function findPeople() {
     if (!analysis || !edited) return;
+    setScreen(3);
     const result = await run("submit", () =>
       api<SubmitResult>("/api/demand/submit", { body: { ...input(), analysisRunId: analysis.analysisRunId, corrections: corrections(analysis.intent, edited) } }),
     );
-    if (result) setSubmitted(result);
+    if (result) {
+      if (researchConfigured) await researchMarket(result.intent, result.requestId);
+      setSubmitted(result);
+    } else setScreen(2);
   }
 
   async function retryMatch() {
@@ -160,6 +246,7 @@ export function WishFlow() {
     try {
       const result = await api<Joined>(`/api/demand/${clusterId}/join`, { body: { requestId: submitted.requestId, ...(linkRequest ? {} : { linkRequest: false }) } });
       setJoined(result);
+      setScreen(4);
       await loadFeatures(result.cluster.id);
     } catch (e) {
       if (e instanceof ApiError && e.code === "INCOMPATIBLE_REQUEST") {
@@ -180,6 +267,7 @@ export function WishFlow() {
     );
     if (!result) return;
     setJoined({ cluster: result.cluster, linked: true, metrics: result.metrics });
+    setScreen(4);
     await loadFeatures(result.cluster.id);
   }
 
@@ -195,20 +283,23 @@ export function WishFlow() {
   const patch = (p: Partial<Intent>) => setEdited((current) => (current ? { ...current, ...p } : current));
 
   return (
-    <div className="flex flex-col gap-8">
-      <form onSubmit={analyze} className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5" aria-label="Your wish">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="wish-text">What do you wish existed?</Label>
-          <Textarea
-            id="wish-text"
-            value={rawText}
-            onChange={(e) => setRawText(e.target.value)}
-            rows={4}
-            placeholder="I wish there were an AI coding assistant that ran completely offline, supported my local files, and didn't require a $200 monthly subscription."
-            maxLength={2000}
-          />
-          <span className="text-xs text-muted-text">Your original words are stored as written and never overwritten.</span>
+    <div className="wish-wizard">
+      <div className="wish-stage">
+        <div className="wish-stage-topbar">
+          {screen > 1 && screen < 4 ? (
+            <button type="button" onClick={() => setScreen((screen - 1) as 1 | 2 | 3)}><ArrowLeft size={15} aria-hidden /> Back</button>
+          ) : <span />}
+          <span>Step {screen} of 4</span>
         </div>
+
+      {screen === 1 ? <form onSubmit={analyze} className="wish-primary-form" aria-label="Your wish">
+        <header className="wish-form-heading">
+          <span>Turn a frustration into demand</span>
+          <h1>What do you wish existed?</h1>
+          <p>Describe the product, service, or improvement you would genuinely pay for. Plain language works best.</p>
+        </header>
+        <WishPromptBar value={rawText} onChange={setRawText} busy={busy === "analyze"} disabled={busy !== null || rawText.trim().length < 10} />
+        <span className="text-xs text-muted-text">Your original words are stored as written and never overwritten.</span>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="wish-url">A product that falls short (optional)</Label>
@@ -219,13 +310,7 @@ export function WishFlow() {
             <Input id="wish-price" value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" placeholder="20" />
           </div>
         </div>
-        <div>
-          <Button type="submit" disabled={busy !== null || rawText.trim().length < 10} title={rawText.trim().length < 10 ? "Describe your wish in at least 10 characters first" : undefined}>
-            {busy === "analyze" ? <Loader2 className="animate-spin" aria-hidden /> : null}
-            Analyze
-          </Button>
-        </div>
-      </form>
+      </form> : null}
 
       {error ? (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
@@ -233,15 +318,12 @@ export function WishFlow() {
         </p>
       ) : null}
 
-      {analysis && edited ? (
-        <section aria-labelledby="interpretation" className="flex flex-col gap-5 rounded-xl border border-line bg-surface p-5" data-testid="interpretation">
+      {screen === 2 && analysis && edited ? (
+        <section aria-labelledby="interpretation" className="wish-step-content" data-testid="interpretation">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="interpretation" className="text-lg font-medium text-foreground">
-              How we understood your wish
-            </h2>
+            <div className="wish-form-heading"><span>AI interpretation</span><h2 id="interpretation">Review your wish</h2><p>Correct anything before we search for people who need the same thing.</p></div>
             {analysis.provider === "fallback" ? <FallbackAiChip /> : <AiGeneratedChip />}
           </div>
-          <p className="text-xs text-muted-text">Review and correct anything. Corrections are stored next to the original interpretation.</p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="intent-title">Title</Label>
@@ -342,8 +424,103 @@ export function WishFlow() {
                 .join(", ")}
             </p>
           ) : null}
-          <div>
-            <Button onClick={findPeople} disabled={busy !== null || edited.title.trim().length < 3} title={edited.title.trim().length < 3 ? "Give the wish a title of at least 3 characters first" : undefined}>
+          <div className="rounded-xl border border-purple/25 bg-purple/5 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="max-w-2xl">
+                <h3 className="font-medium text-foreground">Market research runs automatically</h3>
+                <p className="mt-1 text-sm text-muted-text">
+                  After you confirm this brief, the backend searches existing products, checks evidence-backed gaps, and stores the result for builders.
+                </p>
+              </div>
+            </div>
+            {!researchConfigured ? (
+              <p className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground" role="status">
+                Live research is unavailable until the server has a Tavily search key. Your wish can still be analyzed and matched normally.
+              </p>
+            ) : null}
+            {researchPhase !== "idle" ? (
+              <div className="research-status-line" data-testid="research-progress" aria-live="polite">
+                <LatticeLoader
+                  status={researchPhase === "working" ? "working" : researchPhase === "error" ? "error" : "done"}
+                  label={RESEARCH_STAGES[researchStage]}
+                  doneLabel="Research complete"
+                  errorLabel="Research stopped"
+                  pattern="orbit"
+                  color="#76569c"
+                  cellSize={6}
+                  gap={2}
+                  fontSize={13}
+                  showTimer={false}
+                />
+              </div>
+            ) : null}
+          </div>
+          <section className="wish-suggestions" aria-labelledby="suggested-clusters">
+            <div>
+              <span>Suggested automatically</span>
+              <h3 id="suggested-clusters">Demand clusters you may fit</h3>
+              <p>Live suggestions based on the interpreted category. Final matching runs after you confirm your brief.</p>
+            </div>
+            {suggestionsLoading ? <LatticeLoader label="Finding related demand" pattern="sweep" grid={4} color="#76569c" showTimer={false} /> : suggestions.length ? (
+              <ul>{suggestions.map((cluster) => <li key={cluster.id}>
+                <Link href={`/demand/${cluster.slug}`} target="_blank"><strong>{cluster.title}</strong><ArrowRight aria-hidden /></Link>
+                <p>{cluster.problem}</p>
+                <span>{formatNumber(cluster.uniqueInterested)} interested · {cluster.requiredFeatures.length} shared priorities</span>
+              </li>)}</ul>
+            ) : <p className="wish-suggestions-empty">No existing cluster in this category yet. Your wish may start the first one.</p>}
+          </section>
+          {research ? (
+            <section aria-labelledby="wish-research" className="flex flex-col gap-5 rounded-xl border border-line bg-surface-2/40 p-4" data-testid="wish-research">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 id="wish-research" className="font-medium text-foreground">AI market brief</h3>
+                  <span className="rounded-full border border-lime/40 bg-lime/10 px-2 py-0.5 text-[11px] text-foreground">Web grounded</span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-foreground/90">{research.report.verdict}</p>
+              </div>
+              {research.report.existingSolutions.length ? (
+                <div>
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-text">Existing solutions</h4>
+                  <ul className="mt-2 grid gap-3 sm:grid-cols-2">
+                    {research.report.existingSolutions.map((solution) => (
+                      <li key={`${solution.name}-${solution.sourceUrls[0]}`} className="rounded-lg border border-line bg-surface p-3">
+                        <p className="font-medium text-foreground">{solution.name}</p>
+                        <p className="mt-2 text-xs leading-5 text-muted-text"><span className="text-foreground">Overlap:</span> {solution.overlap}</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-text"><span className="text-foreground">Possible gap:</span> {solution.gap}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {solution.sourceUrls.map((url, index) => (
+                            <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-purple hover:underline">
+                              Source {index + 1} <ExternalLink className="size-3" aria-hidden />
+                            </a>
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-text">Opportunities to validate</h4>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-foreground/90">{research.report.opportunities.map((item) => <li key={item}>{item}</li>)}</ul>
+                </div>
+                <div>
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-text">Risks</h4>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-foreground/90">{research.report.risks.map((item) => <li key={item}>{item}</li>)}</ul>
+                </div>
+              </div>
+              {research.report.followUpQuestions.length ? (
+                <div>
+                  <h4 className="text-xs font-medium uppercase tracking-wide text-muted-text">Questions that sharpen the idea</h4>
+                  <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm text-foreground/90">{research.report.followUpQuestions.map((item) => <li key={item}>{item}</li>)}</ol>
+                </div>
+              ) : null}
+              <p className="border-t border-line pt-3 text-xs text-muted-text"><span className="font-medium text-foreground">Research limits:</span> {research.report.uncertainty}</p>
+            </section>
+          ) : null}
+          <div className="wish-stage-actions">
+            <span>Corrections stay attached to your original words.</span>
+            <Button size="lg" onClick={findPeople} disabled={busy !== null || edited.title.trim().length < 3} title={edited.title.trim().length < 3 ? "Give the wish a title of at least 3 characters first" : undefined}>
               {busy === "submit" ? <Loader2 className="animate-spin" aria-hidden /> : <ArrowRight aria-hidden />}
               Find my people
             </Button>
@@ -351,8 +528,28 @@ export function WishFlow() {
         </section>
       ) : null}
 
-      {submitted && !joined ? (
-        <section aria-labelledby="matches" className="flex flex-col gap-4">
+      {screen === 2 && (!analysis || !edited) ? (
+        <section className="wish-step-content" aria-label="Interpreting your wish" aria-live="polite">
+          <LatticeLoader label="Interpreting your wish" pattern="orbit" color="#76569c" showTimer={false} />
+          <div className="grid animate-pulse gap-4 sm:grid-cols-2">
+            {["Title", "Category", "Desired outcome", "Who it is for"].map((label) => <div key={label} className="space-y-2"><span className="text-xs text-muted-text">{label}</span><div className="h-10 rounded-lg bg-surface-2" /></div>)}
+          </div>
+          <div className="space-y-2 animate-pulse"><span className="text-xs text-muted-text">Missing capabilities</span><div className="h-12 rounded-lg bg-surface-2" /><div className="h-12 rounded-lg bg-surface-2" /></div>
+        </section>
+      ) : null}
+
+      {screen === 3 && !submitted && !joined ? (
+        <section className="wish-step-content" aria-label="Researching and matching your wish" aria-live="polite">
+          <LatticeLoader status="working" label={researchPhase === "working" ? RESEARCH_STAGES[researchStage] : "Finding matching demand"} pattern="sweep" color="#76569c" showTimer={false} />
+          <div className="space-y-3 animate-pulse">
+            <div className="h-7 w-2/3 rounded bg-surface-2" />
+            {[1, 2, 3].map((item) => <div key={item} className="rounded-xl border border-line bg-surface p-5"><div className="h-5 w-1/2 rounded bg-surface-2" /><div className="mt-4 h-2 rounded bg-surface-2" /><div className="mt-3 h-14 rounded bg-surface-2" /></div>)}
+          </div>
+        </section>
+      ) : null}
+
+      {screen === 3 && submitted && !joined ? (
+        <section aria-labelledby="matches" className="wish-step-content">
           <h2 id="matches" className="text-lg font-medium text-foreground">
             {submitted.recommendation === "join"
               ? "People who want the same thing"
@@ -450,8 +647,8 @@ export function WishFlow() {
         </section>
       ) : null}
 
-      {joined ? (
-        <section aria-labelledby="joined" className="flex flex-col gap-6 rounded-xl border border-lime/30 bg-surface p-5" data-testid="joined">
+      {screen === 4 && joined ? (
+        <section aria-labelledby="joined" className="wish-step-content" data-testid="joined">
           <div className="flex flex-col gap-1">
             <h2 id="joined" className="text-lg font-medium text-foreground">
               You joined “{joined.cluster.title}”
@@ -517,6 +714,20 @@ export function WishFlow() {
             clusterId={joined.cluster.id}
             intent={null}
             onSaved={({ metrics }) => setJoined((j) => (j && metrics ? { ...j, metrics } : j))}
+            paymentVerified={paymentVerified}
+            redirectAfterSave="/dashboard"
+            paymentSection={submitted && paypalClientId ? (
+              <CommitmentCheckout
+                requestId={submitted.requestId}
+                clusterId={joined.cluster.id}
+                clientId={paypalClientId}
+                onVerified={markPaymentVerified}
+              />
+            ) : (
+              <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-muted-text">
+                PayPal Sandbox is not configured, so this wish cannot receive a payment-verified commitment yet.
+              </div>
+            )}
           />
           <div className="flex flex-wrap gap-3 text-sm">
             <Link className="text-lime underline-offset-4 hover:underline" href={`/demand/${joined.cluster.slug}`}>
@@ -528,6 +739,7 @@ export function WishFlow() {
           </div>
         </section>
       ) : null}
+      </div>
     </div>
   );
 }

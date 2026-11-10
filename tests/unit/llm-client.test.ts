@@ -39,6 +39,78 @@ const call = (client: ReturnType<typeof setup>["client"], user = "hello") =>
 
 beforeEach(() => resetJsonSchemaWarning());
 
+const openrouterFallback: LlmConfig = {
+  ...baseConfig,
+  provider: "openrouter",
+  baseUrl: "https://openrouter.test/api/v1",
+  apiKey: "openrouter-test-key",
+  model: "provider/fallback-model",
+};
+
+describe("provider fallback", () => {
+  it("does not call OpenRouter when the primary succeeds", async () => {
+    const { client, fake } = setup([chatCompletion('{"answer":"primary","score":1}')], { fallback: openrouterFallback });
+    expect(await call(client)).toMatchObject({ ok: true, model: "test-model" });
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("switches endpoint, credentials and model after primary authorization failure", async () => {
+    const { client, fake, runs } = setup([{ status: 401, json: {} }, chatCompletion('{"answer":"backup","score":1}')], { provider: "tinker", fallback: openrouterFallback });
+    expect(await call(client)).toMatchObject({ ok: true, model: "provider/fallback-model" });
+    expect(fake.calls[1].url).toBe("https://openrouter.test/api/v1/chat/completions");
+    expect(fake.calls[1].headers.authorization).toBe("Bearer openrouter-test-key");
+    expect(fake.calls[1].body).toMatchObject({ model: "provider/fallback-model" });
+    expect(runs.rows.map(row => row.raw.status)).toEqual(["failed", "succeeded"]);
+  });
+
+  it("exhausts transient primary retries before calling the fallback", async () => {
+    const { client, fake } = setup([{ status: 503 }, { status: 503 }, { status: 503 }, chatCompletion('{"answer":"backup","score":1}')], { fallback: openrouterFallback });
+    expect((await call(client)).ok).toBe(true);
+    expect(fake.calls.map(c => c.url)).toEqual([baseConfig.baseUrl + "/chat/completions", baseConfig.baseUrl + "/chat/completions", baseConfig.baseUrl + "/chat/completions", openrouterFallback.baseUrl + "/chat/completions"]);
+  });
+
+  it("also falls back after repeated schema-invalid outputs", async () => {
+    const invalid = chatCompletion('{"answer":"invalid","score":10}');
+    const { client, runs } = setup([invalid, invalid, invalid, chatCompletion('{"answer":"valid","score":1}')], { fallback: openrouterFallback });
+    expect(await call(client)).toMatchObject({ ok: true, data: { answer: "valid", score: 1 } });
+    expect(runs.rows[0].raw.attempts).toBe(3);
+  });
+
+  it("can use a configured fallback when primary credentials are absent", async () => {
+    const { client, fake } = setup([chatCompletion('{"answer":"backup","score":1}')], { apiKey: undefined, fallback: openrouterFallback });
+    expect((await call(client)).ok).toBe(true);
+    expect(fake.calls[0].url).toContain("openrouter.test");
+  });
+
+  it("never calls either provider in forced local-fallback mode", async () => {
+    const { client, fake } = setup([], { aiMode: "fallback", fallback: openrouterFallback });
+    expect(await call(client)).toEqual({ ok: false, reason: "not_configured" });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("returns an error for the agents' local fallback when both providers fail", async () => {
+    const { client, runs } = setup([{ status: 401 }, { status: 403 }], { fallback: openrouterFallback });
+    expect(await call(client)).toMatchObject({ ok: false, reason: "error", error: "HTTP 403" });
+    expect(runs.rows.map(row => row.raw.status)).toEqual(["failed", "failed"]);
+  });
+
+  it("does not share cached output across providers with the same model name", async () => {
+    const { client, fake } = setup([{ status: 401 }, chatCompletion('{"answer":"backup","score":1}'), chatCompletion('{"answer":"primary","score":1}')], { fallback: { ...openrouterFallback, model: baseConfig.model } });
+    expect(await call(client)).toMatchObject({ ok: true, data: { answer: "backup" } });
+    expect(await call(client)).toMatchObject({ ok: true, data: { answer: "primary" } });
+    expect(fake.calls).toHaveLength(3);
+  });
+
+  it("prompts for schema-valid JSON without response_format for Tinker", async () => {
+    const { client, fake } = setup([chatCompletion('{"answer":"valid","score":1}')], { jsonMode: "none", maxTokens: 4096 });
+    expect((await call(client)).ok).toBe(true);
+    expect(fake.calls[0].body).not.toHaveProperty("response_format");
+    expect(fake.calls[0].body).toMatchObject({ max_tokens: 4096 });
+    const body = fake.calls[0].body as { messages: { content: string }[] };
+    expect(body.messages[0].content).toContain('"required":["answer","score"]');
+  });
+});
+
 describe("completeJson", () => {
   it("returns not_configured in fallback mode without any HTTP call", async () => {
     const { client, fake, runs } = setup([], { aiMode: "fallback" });

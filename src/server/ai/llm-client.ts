@@ -13,14 +13,17 @@ import { supabaseRunStore, type AiAgent, type AiTargetType, type RunStore } from
 export type JsonMode = "json_object" | "json_schema" | "none";
 
 export type LlmConfig = {
+  provider?: string;
   aiMode: "llm" | "fallback";
   baseUrl: string;
   apiKey?: string;
   model?: string;
   jsonMode: JsonMode;
   timeoutMs: number;
+  maxTokens?: number;
   inputCostPerMTok?: number;
   outputCostPerMTok?: number;
+  fallback?: Omit<LlmConfig, "fallback">;
 };
 
 export type LlmDeps = {
@@ -92,7 +95,7 @@ function zodSummary(error: z.ZodError): string {
     .join("; ");
 }
 
-export function createLlmClient(deps: LlmDeps) {
+function createSingleLlmClient(deps: LlmDeps) {
   async function call(messages: ChatMessage[], mode: JsonMode, schema: z.ZodType, name: string): Promise<AttemptOutcome> {
     const { config } = deps;
     const format = responseFormat(mode, schema, name);
@@ -100,7 +103,7 @@ export function createLlmClient(deps: LlmDeps) {
       const response = await deps.fetchImpl(`${config.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify({ model: config.model, messages, temperature: 0.2, ...(format ? { response_format: format } : {}) }),
+        body: JSON.stringify({ model: config.model, messages, temperature: 0.2, ...(config.maxTokens ? { max_tokens: config.maxTokens } : {}), ...(format ? { response_format: format } : {}) }),
         signal: AbortSignal.timeout(config.timeoutMs),
       });
       const text = await response.text();
@@ -120,7 +123,8 @@ export function createLlmClient(deps: LlmDeps) {
     if (config.aiMode === "fallback" || !config.apiKey || !config.model) return { ok: false, reason: "not_configured" };
     const model = config.model;
     const maxRetries = params.maxRetries ?? 2;
-    const inputHash = computeInputHash(params.agent, params.promptVersion, model, params.system, params.user);
+    // Identical model names served by different providers must not share cached results.
+    const inputHash = computeInputHash(params.agent, params.promptVersion, `${config.baseUrl}\n${config.jsonMode}\n${model}`, params.system, params.user);
 
     const since = new Date(deps.now().getTime() - CACHE_DAYS * 24 * 3600 * 1000).toISOString();
     const cached = await deps.runs.findCachedSuccess({
@@ -136,7 +140,7 @@ export function createLlmClient(deps: LlmDeps) {
     }
 
     const messages: ChatMessage[] = [
-      { role: "system", content: params.system },
+      { role: "system", content: config.jsonMode === "none" ? `${params.system}\nReturn only a JSON object matching this schema, without commentary or reasoning:\n${JSON.stringify(z.toJSONSchema(params.schema))}` : params.system },
       { role: "user", content: params.user },
     ];
     const started = deps.now().getTime();
@@ -237,18 +241,43 @@ export function createLlmClient(deps: LlmDeps) {
   return { completeJson };
 }
 
+/** Each provider keeps its own validation, retries, cache, cost accounting and run record. */
+export function createLlmClient(deps: LlmDeps) {
+  const primary = createSingleLlmClient(deps);
+  const fallback = deps.config.fallback ? createSingleLlmClient({ ...deps, config: deps.config.fallback }) : null;
+  async function completeJson<T>(params: CompleteJsonParams<T>): Promise<CompleteJsonResult<T>> {
+    const result = await primary.completeJson(params);
+    if (result.ok || !fallback || deps.config.aiMode === "fallback") return result;
+    deps.logger.warn("llm.provider_fallback", {
+      primary: deps.config.provider ?? "custom",
+      fallback: deps.config.fallback?.provider ?? "openrouter",
+      reason: result.reason,
+    });
+    return fallback.completeJson(params);
+  }
+  return { completeJson };
+}
+
 export type LlmClient = ReturnType<typeof createLlmClient>;
 
 export const llmClient: LlmClient = createLlmClient({
   config: {
+    provider: env.llm.provider,
     aiMode: env.aiMode,
     baseUrl: env.llm.baseUrl,
     apiKey: env.llm.apiKey,
     model: env.llm.model,
     jsonMode: env.llm.jsonMode,
     timeoutMs: env.llm.timeoutMs,
+    maxTokens: env.llm.maxTokens,
     inputCostPerMTok: env.llm.inputCostPerMTok,
     outputCostPerMTok: env.llm.outputCostPerMTok,
+    fallback: env.llm.fallback ? {
+      ...env.llm.fallback,
+      aiMode: env.aiMode,
+      timeoutMs: env.llm.timeoutMs,
+      maxTokens: env.llm.maxTokens,
+    } : undefined,
   },
   runs: supabaseRunStore,
   fetchImpl: (...args) => fetch(...args),

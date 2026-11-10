@@ -14,6 +14,7 @@ import { logger } from "@/server/http/logger";
 import { findVisibleCluster } from "./cluster-detail.service";
 import { countMentions, loadLinkedWishes } from "./linked-wishes";
 import { getClusterMetrics } from "./metrics.service";
+import { WishResearchReportSchema, type WishResearchReport } from "./wish-research.service";
 
 /**
  * Market analysis (design 7.4 Agents 3 and 5; 11 Evidence tab; 12 `POST /api/ai/market-analysis`). LLM research is
@@ -32,6 +33,7 @@ export type EvidenceData = {
   hypotheses: EvidenceView[];
   research: AnalysisView<MarketGap> | null;
   commercial: AnalysisView<Commercial> | null;
+  wishResearch: { requestId: string; data: WishResearchReport; model: string; createdAt: string }[];
 };
 
 const EMAIL_RE = /[^\s@<>]+@[^\s@<>]+\.[a-z]{2,}/gi;
@@ -117,6 +119,13 @@ export async function getEvidence(clusterId: string): Promise<EvidenceData> {
     supabaseRunStore.findLatestForTarget("commercial_analyst", "cluster", clusterId),
   ]);
   const newestFirst = [...wishes].sort((a, b) => Number(a.isDemo) - Number(b.isDemo) || b.createdAt.localeCompare(a.createdAt));
+  const wishResearch = (await Promise.all(
+    newestFirst.slice(0, 12).map(async (wish) => {
+      const run = await supabaseRunStore.findLatestForTarget("wish_researcher", "demand_request", wish.requestId);
+      const parsed = WishResearchReportSchema.safeParse(run?.output);
+      return run && parsed.success ? { requestId: wish.requestId, data: parsed.data, model: run.modelName, createdAt: run.createdAt } : null;
+    }),
+  )).filter((item): item is NonNullable<typeof item> => item !== null);
   return {
     excerpts: newestFirst.slice(0, 12).map((w) => ({ text: anonymizeExcerpt(w.rawText), isDemo: w.isDemo, createdAt: w.createdAt })),
     linkedWishes: wishes.length,
@@ -124,6 +133,7 @@ export async function getEvidence(clusterId: string): Promise<EvidenceData> {
     hypotheses: evidence.filter((e) => e.sourceType === "ai_hypothesis"),
     research: agentDataFromRun(researchRun, MarketGapSchema),
     commercial: agentDataFromRun(commercialRun, CommercialSchema),
+    wishResearch,
   };
 }
 

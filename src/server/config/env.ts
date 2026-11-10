@@ -95,17 +95,54 @@ export function parseEnv(source: EnvSource) {
   }
 
   // ---------- AI ----------
-  const llmBaseUrl = field("LLM_BASE_URL", httpUrl, "https://api.openai.com/v1").replace(/\/+$/, "");
-  const llmApiKey = read(source, "LLM_API_KEY");
-  const llmModel = read(source, "LLM_MODEL");
-  const llmJsonMode = field("LLM_JSON_MODE", z.enum(["json_object", "json_schema", "none"]), "json_object");
+  const llmProvider = field("LLM_PROVIDER", z.enum(["custom", "tinker", "openrouter"]), "custom");
+  const jsonModes = z.enum(["json_object", "json_schema", "none"]);
+  const customLlm = {
+    provider: "custom" as const,
+    baseUrl: field("LLM_BASE_URL", httpUrl, "https://api.openai.com/v1").replace(/\/+$/, ""),
+    apiKey: read(source, "LLM_API_KEY"),
+    model: read(source, "LLM_MODEL"),
+    jsonMode: field("LLM_JSON_MODE", jsonModes, "json_object"),
+    inputCostPerMTok: field<number | undefined>("LLM_INPUT_COST_PER_MTOK", nonNegative, undefined, "warning"),
+    outputCostPerMTok: field<number | undefined>("LLM_OUTPUT_COST_PER_MTOK", nonNegative, undefined, "warning"),
+  };
+  const tinkerLlm = {
+    provider: "tinker" as const,
+    baseUrl: field("TINKER_BASE_URL", httpUrl, "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1").replace(/\/+$/, ""),
+    apiKey: read(source, "TINKER_API_KEY"),
+    model: read(source, "TINKER_MODEL") ?? "thinkingmachines/Inkling",
+    jsonMode: field("TINKER_JSON_MODE", jsonModes, "none"),
+    inputCostPerMTok: field<number | undefined>("TINKER_INPUT_COST_PER_MTOK", nonNegative, undefined, "warning"),
+    outputCostPerMTok: field<number | undefined>("TINKER_OUTPUT_COST_PER_MTOK", nonNegative, undefined, "warning"),
+  };
+  const openrouterLlm = {
+    provider: "openrouter" as const,
+    baseUrl: field("OPENROUTER_BASE_URL", httpUrl, "https://openrouter.ai/api/v1").replace(/\/+$/, ""),
+    apiKey: read(source, "OPENROUTER_API_KEY"),
+    model: read(source, "OPENROUTER_MODEL"),
+    jsonMode: field("OPENROUTER_JSON_MODE", jsonModes, "json_object"),
+    inputCostPerMTok: field<number | undefined>("OPENROUTER_INPUT_COST_PER_MTOK", nonNegative, undefined, "warning"),
+    outputCostPerMTok: field<number | undefined>("OPENROUTER_OUTPUT_COST_PER_MTOK", nonNegative, undefined, "warning"),
+  };
+  const primaryLlm = { custom: customLlm, tinker: tinkerLlm, openrouter: openrouterLlm }[llmProvider];
+  const fallbackLlm = llmProvider !== "openrouter" && openrouterLlm.apiKey && openrouterLlm.model ? openrouterLlm : undefined;
   const llmTimeoutMs = field("LLM_TIMEOUT_MS", intIn(1000, 300_000), 30_000);
-  const llmInputCostPerMTok = field<number | undefined>("LLM_INPUT_COST_PER_MTOK", nonNegative, undefined, "warning");
-  const llmOutputCostPerMTok = field<number | undefined>("LLM_OUTPUT_COST_PER_MTOK", nonNegative, undefined, "warning");
-  const aiMode: "llm" | "fallback" = !forceFallbacks && llmApiKey && llmModel ? "llm" : "fallback";
+  const llmMaxTokens = field("LLM_MAX_TOKENS", intIn(1, 65_536), 4096);
+  const aiMode: "llm" | "fallback" = !forceFallbacks && ((primaryLlm.apiKey && primaryLlm.model) || fallbackLlm) ? "llm" : "fallback";
 
-  const embeddingBaseUrl = field("EMBEDDING_BASE_URL", httpUrl, llmBaseUrl).replace(/\/+$/, "");
-  const embeddingApiKey = read(source, "EMBEDDING_API_KEY") ?? llmApiKey;
+  // Web research is deliberately separate from the chat model. A chat credential alone must never be
+  // represented as live market research.
+  const researchBaseUrl = field("RESEARCH_BASE_URL", httpUrl, "https://api.tavily.com").replace(/\/+$/, "");
+  const researchApiKey = read(source, "TAVILY_API_KEY");
+  const researchMode: "web" | "disabled" = !forceFallbacks && researchApiKey ? "web" : "disabled";
+  const elasticUrl = field<string | undefined>("ELASTICSEARCH_URL", httpUrl, undefined)?.replace(/\/+$/, "");
+  const elasticApiKey = read(source, "ELASTIC_API_KEY");
+  const elasticIndex = read(source, "ELASTIC_RESEARCH_INDEX") ?? "unbuilt-research";
+
+  // Tinker chat credentials must not be sent to another provider's embeddings endpoint.
+  const embeddingDefaults = llmProvider === "openrouter" ? openrouterLlm : customLlm;
+  const embeddingBaseUrl = field("EMBEDDING_BASE_URL", httpUrl, embeddingDefaults.baseUrl).replace(/\/+$/, "");
+  const embeddingApiKey = read(source, "EMBEDDING_API_KEY") ?? (llmProvider === "tinker" ? undefined : embeddingDefaults.apiKey);
   const embeddingModel = read(source, "EMBEDDING_MODEL");
   const dimensionsRaw = read(source, "EMBEDDING_DIMENSIONS");
   const dimensionsParsed = dimensionsRaw === undefined ? undefined : intIn(16, 1536).safeParse(dimensionsRaw);
@@ -170,6 +207,16 @@ export function parseEnv(source: EnvSource) {
     });
   }
 
+  // ---------- Email reports / scheduled jobs ----------
+  const resendApiKey = read(source, "RESEND_API_KEY");
+  const reportFromEmailRaw = read(source, "REPORT_FROM_EMAIL");
+  const reportFromEmailParsed = reportFromEmailRaw ? z.email().safeParse(reportFromEmailRaw) : null;
+  if (reportFromEmailParsed && !reportFromEmailParsed.success) {
+    issues.push({ variable: "REPORT_FROM_EMAIL", severity: "warning", message: "Must be a valid sender email. Report email is disabled." });
+  }
+  const reportFromEmail = reportFromEmailParsed?.success ? reportFromEmailParsed.data : undefined;
+  const cronSecret = read(source, "CRON_SECRET");
+
   // ---------- Security / seed ----------
   const rateLimitSalt = read(source, "RATE_LIMIT_SALT") ?? DEV_RATE_LIMIT_SALT;
   if (rateLimitSalt === DEV_RATE_LIMIT_SALT && isProduction) {
@@ -192,14 +239,23 @@ export function parseEnv(source: EnvSource) {
       serviceRoleKey: supabaseServiceRoleKey,
     },
     aiMode,
+    research: {
+      mode: researchMode,
+      provider: "tavily" as const,
+      baseUrl: researchBaseUrl,
+      apiKey: researchApiKey,
+      elastic: {
+        configured: !forceFallbacks && Boolean(elasticUrl && elasticApiKey),
+        url: elasticUrl,
+        apiKey: elasticApiKey,
+        index: elasticIndex,
+      },
+    },
     llm: {
-      baseUrl: llmBaseUrl,
-      apiKey: llmApiKey,
-      model: llmModel,
-      jsonMode: llmJsonMode,
+      ...primaryLlm,
       timeoutMs: llmTimeoutMs,
-      inputCostPerMTok: llmInputCostPerMTok,
-      outputCostPerMTok: llmOutputCostPerMTok,
+      maxTokens: llmMaxTokens,
+      fallback: fallbackLlm,
     },
     embeddingMode,
     embedding: {
@@ -221,6 +277,16 @@ export function parseEnv(source: EnvSource) {
       webhookId: paypalWebhookId,
       currency: paypalCurrency,
       merchantDisplayName,
+    },
+    email: {
+      configured: Boolean(resendApiKey && reportFromEmail),
+      apiKey: resendApiKey,
+      from: reportFromEmail,
+      missing: [["RESEND_API_KEY", resendApiKey], ["REPORT_FROM_EMAIL", reportFromEmail]].filter(([, value]) => !value).map(([name]) => name as string),
+    },
+    cron: {
+      configured: Boolean(cronSecret),
+      secret: cronSecret,
     },
     rateLimitSalt,
     demoAccountPassword,

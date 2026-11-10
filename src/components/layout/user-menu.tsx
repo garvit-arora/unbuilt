@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, LogOut } from "lucide-react";
+import { ChevronDown, Loader2, LogOut, ShoppingBag, Wrench } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -14,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
+import { api, errorMessage } from "@/lib/api-client";
+import type { AccountRole } from "@/lib/schemas/auth";
 
 const ROLE_LABELS = { buyer: "Buyer", builder: "Builder", admin: "Admin" } as const;
 
@@ -49,6 +51,20 @@ export function useSignOut() {
 
 export function UserMenu({ displayName, email, role }: UserMenuProps) {
   const { signOut, pending } = useSignOut();
+  const [switching, setSwitching] = useState(false);
+  const nextRole: AccountRole = role === "buyer" ? "builder" : "buyer";
+
+  async function switchRole() {
+    setSwitching(true);
+    try {
+      const result = await api<{ role: AccountRole }>("/api/account/role", { body: { role: nextRole } });
+      // Reload the server-owned navigation and clear cached pages for the previous role.
+      window.location.assign(result.role === "builder" ? "/builder" : "/dashboard");
+    } catch (error) {
+      toast.error(errorMessage(error));
+      setSwitching(false);
+    }
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -66,7 +82,16 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
           {email ? <span className="truncate text-xs font-normal text-muted-text">{email}</span> : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={pending} onSelect={() => void signOut()}>
+        {role !== "admin" ? <>
+          <DropdownMenuLabel className="text-xs font-normal text-muted-text">Using UNBUILT as a {ROLE_LABELS[role].toLowerCase()}</DropdownMenuLabel>
+          <DropdownMenuItem disabled={pending || switching} onSelect={(event) => { event.preventDefault(); void switchRole(); }} data-testid="switch-role">
+            {switching ? <Loader2 className="animate-spin" aria-hidden /> : nextRole === "builder" ? <Wrench aria-hidden /> : <ShoppingBag aria-hidden />}
+            {switching ? "Switching role…" : `Switch to ${ROLE_LABELS[nextRole]}`}
+          </DropdownMenuItem>
+          <p className="px-2 py-2 text-xs leading-relaxed text-muted-text">Switch anytime. Your wishes, purchases, and projects stay saved.</p>
+          <DropdownMenuSeparator />
+        </> : null}
+        <DropdownMenuItem disabled={pending || switching} onSelect={() => void signOut()}>
           <LogOut aria-hidden />
           Sign out
         </DropdownMenuItem>

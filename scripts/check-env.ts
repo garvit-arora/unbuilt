@@ -18,9 +18,12 @@ const lines: [string, string][] = [
   [
     "AI mode",
     env.aiMode === "llm"
-      ? `llm (${env.llm.model} via ${env.llm.baseUrl}, ${env.llm.jsonMode})`
+      ? `llm (primary: ${env.llm.provider}, ${env.llm.apiKey && env.llm.model ? env.llm.model : "not configured"}; ${env.llm.jsonMode})`
       : "fallback (deterministic heuristics, labelled \"Fallback AI\")",
   ],
+  ["AI provider fallback", env.llm.fallback ? `OpenRouter (${env.llm.fallback.model})` : "not configured; set OPENROUTER_API_KEY and OPENROUTER_MODEL"],
+  ["Wish market research", env.research.mode === "web" ? "configured (Tavily + AI synthesis)" : "not configured; set TAVILY_API_KEY"],
+  ["Elastic evidence index", env.research.elastic.configured ? `configured (${env.research.elastic.index})` : "not configured; set ELASTICSEARCH_URL and ELASTIC_API_KEY"],
   [
     "Embeddings",
     env.embeddingMode === "model"
@@ -34,6 +37,8 @@ const lines: [string, string][] = [
       : `NOT configured (${env.paypal.reason}${env.paypal.missing.length ? `; missing ${env.paypal.missing.join(", ")}` : ""})`,
   ],
   ["PayPal webhooks", env.paypal.webhooksConfigured ? "configured" : "not configured (PAYPAL_WEBHOOK_ID)"],
+  ["Integrity report email", env.email.configured ? `configured (${env.email.from})` : `not configured; missing ${env.email.missing.join(", ")}`],
+  ["Scheduled refunds", env.cron.configured ? "configured" : "not configured; set CRON_SECRET"],
   [
     "Matching thresholds",
     (["model", "local"] as const)

@@ -20,6 +20,7 @@ import { listBlueprints } from "@/server/services/blueprint.service";
 import { getClusterDetail } from "@/server/services/cluster-detail.service";
 import { getEvolution } from "@/server/services/evolution.service";
 import { getEvidence } from "@/server/services/research.service";
+import { commitmentService } from "@/server/services/commitment.service";
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -40,7 +41,13 @@ export default async function DemandPage({ params, searchParams }: Props) {
   const tab = typeof query.tab === "string" && isDemandTab(query.tab) ? query.tab : "overview";
   const color = CATEGORY_COLORS[cluster.category as Category] ?? "#8a8f98";
   const isBuilder = detail.viewer.role === "builder" || detail.viewer.role === "admin";
-  const [blueprints, evidence, evolution] = await Promise.all([listBlueprints(cluster.id), getEvidence(cluster.id), getEvolution(cluster, metrics)]);
+  const buildersWorking = detail.proposals.filter((proposal) => proposal.status === "building").length;
+  const [blueprints, evidence, evolution, commitment] = await Promise.all([
+    listBlueprints(cluster.id),
+    getEvidence(cluster.id),
+    getEvolution(cluster, metrics),
+    viewer ? commitmentService.getForCluster(viewer, cluster.id) : Promise.resolve(null),
+  ]);
 
   const panels = {
     overview: <OverviewPanel detail={detail} />,
@@ -67,7 +74,7 @@ export default async function DemandPage({ params, searchParams }: Props) {
     ),
     features: <FeatureVoting clusterId={cluster.id} slug={cluster.slug} features={detail.features} viewer={detail.viewer} />,
     blueprint: <BlueprintTab clusterId={cluster.id} slug={cluster.slug} blueprints={blueprints} canGenerate={isBuilder} signedIn={detail.viewer.signedIn} />,
-    builders: <BuildersPanel detail={detail} />,
+    builders: <BuildersPanel detail={detail} commitment={commitment ? { id: commitment.id, acceptedProposalId: commitment.acceptedProposalId } : null} />,
     evolution: <EvolutionTab evolution={evolution} />,
     evidence: <EvidenceTab clusterId={cluster.id} evidence={evidence} canAnalyze={isBuilder} />,
   };
@@ -107,6 +114,11 @@ export default async function DemandPage({ params, searchParams }: Props) {
             <span>
               <span className="font-mono text-xl text-foreground">{detail.proposals.length}</span> <span className="text-muted-text">proposals</span>
             </span>
+            <Link href={`/demand/${cluster.slug}?tab=builders`} className="inline-flex items-center gap-2 rounded-full border border-lime/25 bg-lime/10 px-3 py-1.5 text-foreground hover:border-lime/50">
+              <span className={`size-2 rounded-full ${buildersWorking > 0 ? "animate-pulse bg-lime" : "bg-muted-text/50"}`} aria-hidden />
+              <span className="font-mono text-sm">{buildersWorking}</span>
+              <span className="text-sm text-muted-text">working now</span>
+            </Link>
           </div>
         </div>
         <div className="self-start">

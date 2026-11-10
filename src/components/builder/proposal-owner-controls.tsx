@@ -11,6 +11,7 @@ import { api, errorMessage } from "@/lib/api-client";
 import { PROGRESS_LABELS } from "@/lib/labels";
 import { PROGRESS_STATUSES } from "@/lib/schemas/marketplace";
 import { OfferForm, offerBody, type OfferFormValues } from "./offer-form";
+import { IntegritySubmission } from "./integrity-submission";
 import { ProposalForm, proposalBody, type ProposalFormValues } from "./proposal-form";
 
 type DraftOffer = { id: string; title: string; values: OfferFormValues };
@@ -25,12 +26,16 @@ export function ProposalOwnerControls({
   initial,
   drafts,
   canCreateOffer,
+  requirements,
+  integrityReport,
 }: {
   proposalId: string;
   status: string;
   initial: ProposalFormValues;
   drafts: DraftOffer[];
   canCreateOffer: boolean;
+  requirements: string[];
+  integrityReport: { id: string; status: string; score: number | null } | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -157,6 +162,10 @@ export function ProposalOwnerControls({
             </Button>
           </div>
         </form>
+      ) : null}
+
+      {status === "building" || status === "launched" ? (
+        <IntegritySubmission proposalId={proposalId} requirements={requirements} initialReport={integrityReport} />
       ) : null}
 
       {drafts.map((d) => (

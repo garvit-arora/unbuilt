@@ -43,6 +43,25 @@ export function EvidenceTab({ clusterId, evidence, canAnalyze }: { clusterId: st
         )}
       </section>
 
+      {evidence.wishResearch.length ? (
+        <section aria-labelledby="automatic-wish-research" className="flex flex-col gap-3">
+          <div>
+            <h2 id="automatic-wish-research" className="text-lg font-medium text-foreground">Automatic buyer-wish research</h2>
+            <p className="mt-1 text-xs text-muted-text">Generated automatically after submission and retained for builders. Web evidence is summarized with explicit uncertainty.</p>
+          </div>
+          <ul className="grid gap-3 lg:grid-cols-2">
+            {evidence.wishResearch.map((item) => (
+              <li key={item.requestId} className="rounded-xl border border-purple/20 bg-purple/5 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2"><AiHypothesisChip /><span className="text-xs text-muted-text">{formatDateTime(item.createdAt)}</span></div>
+                <p className="mt-3 text-sm leading-6 text-foreground/90">{item.data.verdict}</p>
+                {item.data.opportunities.length ? <div className="mt-3"><h3 className="text-xs uppercase tracking-wide text-muted-text">Opportunities</h3><ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-foreground/80">{item.data.opportunities.slice(0, 4).map((text) => <li key={text}>{text}</li>)}</ul></div> : null}
+                <p className="mt-3 border-t border-purple/15 pt-2 text-xs text-muted-text">Limits: {item.data.uncertainty}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section aria-labelledby="references" className="flex flex-col gap-3">
         <h2 id="references" className="text-lg font-medium text-foreground">
           Reference links from buyers

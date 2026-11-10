@@ -1,5 +1,7 @@
 "use client";
-import { Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,13 +23,21 @@ export function IntentEditor({
   intent,
   onSaved,
   compact = false,
+  paymentSection,
+  paymentVerified = true,
+  redirectAfterSave,
 }: {
   clusterId: string;
   intent: ViewerState["intent"];
   onSaved?: (result: { metrics: IntentMetrics; withdrawn: boolean }) => void;
   compact?: boolean;
+  paymentSection?: ReactNode;
+  paymentVerified?: boolean;
+  redirectAfterSave?: string;
 }) {
-  const active = intent && intent.status === "active" ? intent : null;
+  const router = useRouter();
+  const [currentIntent, setCurrentIntent] = useState(intent);
+  const active = currentIntent && currentIntent.status === "active" ? currentIntent : null;
   const [level, setLevel] = useState<Level>(active?.level ?? "price_qualified");
   const [target, setTarget] = useState(active?.targetPriceCents ? String(active.targetPriceCents / 100) : "");
   const [maximum, setMaximum] = useState(active?.maximumPriceCents ? String(active.maximumPriceCents / 100) : "");
@@ -57,9 +67,11 @@ export function IntentEditor({
     }
     setBusy("save");
     try {
-      const result = await api<{ metrics: IntentMetrics }>(`/api/demand/${clusterId}/intent`, { body });
+      const result = await api<{ intent: NonNullable<ViewerState["intent"]>; metrics: IntentMetrics }>(`/api/demand/${clusterId}/intent`, { body });
+      setCurrentIntent(result.intent);
       setSaved(level === "price_qualified" ? `Saved: price-qualified at ${formatCentsShort(body.targetPriceCents as number)}.` : "Saved: interested.");
       onSaved?.({ metrics: result.metrics, withdrawn: false });
+      if (redirectAfterSave) router.push(redirectAfterSave);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -72,7 +84,8 @@ export function IntentEditor({
     setSaved(null);
     setBusy("withdraw");
     try {
-      const result = await api<{ metrics: IntentMetrics }>(`/api/demand/${clusterId}/intent`, { method: "DELETE" });
+      const result = await api<{ intent: ViewerState["intent"]; metrics: IntentMetrics }>(`/api/demand/${clusterId}/intent`, { method: "DELETE" });
+      setCurrentIntent(result.intent);
       setSaved("Your purchase interest was withdrawn. You remain a member.");
       onSaved?.({ metrics: result.metrics, withdrawn: true });
     } catch (e) {
@@ -125,23 +138,29 @@ export function IntentEditor({
           Sandbox checkout on the product page; nothing is charged from this form.
         </p>
       )}
+      {paymentSection}
       {error ? (
         <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       ) : null}
       {saved ? (
-        <p role="status" className="text-sm text-lime">
-          {saved}
+        <p role="status" className="intent-saved-message">
+          <CheckCircle2 aria-hidden /> {saved}
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
-        <Button onClick={save} disabled={busy !== null}>
+        <Button
+          type="button"
+          onClick={save}
+          disabled={busy !== null || !paymentVerified}
+          title={!paymentVerified ? "Complete the PayPal payment first" : undefined}
+        >
           {busy === "save" ? <Loader2 className="animate-spin" aria-hidden /> : null}
           Save my commitment
         </Button>
         {active ? (
-          <Button variant="outline" onClick={withdraw} disabled={busy !== null}>
+          <Button type="button" variant="outline" onClick={withdraw} disabled={busy !== null}>
             {busy === "withdraw" ? <Loader2 className="animate-spin" aria-hidden /> : null}
             Withdraw interest
           </Button>

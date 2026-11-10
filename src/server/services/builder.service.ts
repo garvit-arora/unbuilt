@@ -2,7 +2,7 @@ import "server-only";
 import type { BuildUpdateInput, OpportunitiesQuery, ProposalCreate, ProposalPatch } from "@/lib/schemas/marketplace";
 import type { ClusterCardData } from "@/lib/views";
 import type { SessionUser } from "@/server/auth/guards";
-import { supabaseClustersRepo, type ClustersRepo } from "@/server/db/repositories/clusters.repo";
+import { supabaseClustersRepo, type ClusterRecord, type ClustersRepo } from "@/server/db/repositories/clusters.repo";
 import { dbFail } from "@/server/db/repositories/db-error";
 import {
   supabaseMarketplaceRepo,
@@ -247,7 +247,7 @@ export async function builderDashboard(actor: BuilderActor, now: Date = new Date
 export type ProposalDetail = {
   proposal: ProposalRecord;
   builderName: string;
-  cluster: { id: string; slug: string; title: string; status: string } | null;
+  cluster: { id: string; slug: string; title: string; status: string; requirements: ClusterRecord["requirements"] } | null;
   updates: BuildUpdateRecord[];
   offers: OfferRecord[];
   isOwner: boolean;
@@ -269,7 +269,7 @@ export async function getProposalDetail(proposalId: string, viewer: BuilderActor
   return {
     proposal,
     builderName: builder?.displayName ?? "Builder",
-    cluster: cluster ? { id: cluster.id, slug: cluster.slug, title: cluster.title, status: cluster.status } : null,
+    cluster: cluster ? { id: cluster.id, slug: cluster.slug, title: cluster.title, status: cluster.status, requirements: cluster.requirements } : null,
     updates,
     offers: offers.filter((o) => privileged || (PUBLISHED_STATES as readonly string[]).includes(o.availabilityStatus)),
     isOwner,

@@ -25,6 +25,7 @@ export function toCard(
   metrics: ClusterMetrics | null,
   proposals: { total: number; building: number },
   hasBlueprint: boolean,
+  committedBuyers = 0,
 ): DiscoverCard {
   const requirements = parseRequirements(row.requirements);
   const wtp = metrics?.wtp;
@@ -40,6 +41,7 @@ export function toCard(
     uniqueInterested: metrics?.uniqueInterested ?? 0,
     priceQualifiedBuyers: metrics?.priceQualifiedBuyers ?? 0,
     paidBuyers: metrics?.paidBuyers ?? 0,
+    committedBuyers,
     completedValueCents: metrics?.completedValueCents ?? 0,
     estimatedOpportunityCents: metrics?.estimatedOpportunityCents ?? null,
     wtpMedianCents: wtp && wtp.sufficient ? wtp.medianCents : null,
@@ -104,14 +106,16 @@ const CLUSTER_COLUMNS =
 /** Every visible cluster as a card (metrics from the cache; an invalid cache is recomputed). */
 export async function loadCards(): Promise<DiscoverCard[]> {
   const db = getServiceClient();
-  const [clusters, proposals, blueprints] = await Promise.all([
+  const [clusters, proposals, blueprints, commitments] = await Promise.all([
     db.from("demand_clusters").select(CLUSTER_COLUMNS).not("status", "in", `(${HIDDEN_FROM_DISCOVERY.join(",")})`),
     db.from("product_proposals").select("cluster_id, status").neq("status", "withdrawn"),
     db.from("cluster_blueprints").select("cluster_id"),
+    db.from("wish_commitments").select("cluster_id, buyer_id").eq("status", "COMPLETED"),
   ]);
   if (clusters.error) dbFail("discover clusters failed", clusters.error);
   if (proposals.error) dbFail("discover proposals failed", proposals.error);
   if (blueprints.error) dbFail("discover blueprints failed", blueprints.error);
+  if (commitments.error) dbFail("discover commitments failed", commitments.error);
   const counts = new Map<string, { total: number; building: number }>();
   for (const p of proposals.data) {
     const entry = counts.get(p.cluster_id) ?? { total: 0, building: 0 };
@@ -120,10 +124,16 @@ export async function loadCards(): Promise<DiscoverCard[]> {
     counts.set(p.cluster_id, entry);
   }
   const withBlueprint = new Set(blueprints.data.map((b) => b.cluster_id));
+  const committed = new Map<string, Set<string>>();
+  for (const row of commitments.data) {
+    const buyers = committed.get(row.cluster_id) ?? new Set<string>();
+    buyers.add(row.buyer_id);
+    committed.set(row.cluster_id, buyers);
+  }
   return Promise.all(
     clusters.data.map(async (row) => {
       const metrics = await getClusterMetrics({ id: row.id, metricsCache: row.metrics_cache, metricsRefreshedAt: row.metrics_refreshed_at });
-      return toCard(row, metrics, counts.get(row.id) ?? { total: 0, building: 0 }, withBlueprint.has(row.id));
+      return toCard(row, metrics, counts.get(row.id) ?? { total: 0, building: 0 }, withBlueprint.has(row.id), committed.get(row.id)?.size ?? 0);
     }),
   );
 }

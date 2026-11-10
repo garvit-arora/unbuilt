@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: unbuilt-web
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: TINKER_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: ELASTICSEARCH_URL
+        sync: false
+      - key: ELASTIC_API_KEY
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: RATE_LIMIT_SALT
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true

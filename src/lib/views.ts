@@ -15,6 +15,8 @@ export type ClusterCardData = {
   uniqueInterested: number;
   priceQualifiedBuyers: number;
   paidBuyers: number;
+  /** Buyers with a captured refundable wish commitment (not a product purchase). */
+  committedBuyers?: number;
   completedValueCents: number;
   estimatedOpportunityCents: number | null;
   wtpMedianCents: number | null;

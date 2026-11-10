@@ -5,12 +5,13 @@ import { formatNumber } from "@/lib/format";
 import { label, OFFER_STATUS_LABELS, PROPOSAL_STATUS_LABELS, VERIFICATION_LABELS } from "@/lib/labels";
 import { formatCentsShort } from "@/lib/money";
 import type { ProposalListItem } from "@/lib/views";
+import { AcceptBuilderButton } from "./accept-builder-button";
 
 /**
  * Builders-tab comparison (design 10 P1-7): proposals side by side with price, timeline, scope, stack, verification,
  * launch state, paid buyers (captured PayPal Sandbox payments) and average review rating. Newest first.
  */
-export function ComparisonTable({ proposals }: { proposals: ProposalListItem[] }) {
+export function ComparisonTable({ proposals, commitment }: { proposals: ProposalListItem[]; commitment?: { id: string; acceptedProposalId: string | null } | null }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full min-w-[880px] text-left text-sm" data-testid="proposal-list">
@@ -29,6 +30,7 @@ export function ComparisonTable({ proposals }: { proposals: ProposalListItem[] }
               </span>
             </th>
             <th className="p-3 text-right font-normal">Rating</th>
+            {commitment ? <th className="p-3 font-normal">Commitment</th> : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-line align-top">
@@ -75,6 +77,7 @@ export function ComparisonTable({ proposals }: { proposals: ProposalListItem[] }
                   </span>
                 )}
               </td>
+              {commitment ? <td className="p-3"><AcceptBuilderButton commitmentId={commitment.id} proposalId={p.id} accepted={commitment.acceptedProposalId === p.id} /></td> : null}
             </tr>
           ))}
         </tbody>

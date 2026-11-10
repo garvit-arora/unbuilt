@@ -4,6 +4,8 @@ import { effectiveIntent } from "@/server/ai/schemas";
 import { dbFail } from "@/server/db/repositories/db-error";
 import { getServiceClient } from "@/server/db/service-client";
 import { getSessionClient } from "@/server/db/session-client";
+import { env } from "@/server/config/env";
+import { HIDDEN_FROM_DISCOVERY } from "./discover.service";
 import { getClusterMetrics } from "./metrics.service";
 
 /**
@@ -37,12 +39,14 @@ export type DashboardData = {
 
 export async function loadDashboard(userId: string): Promise<DashboardData> {
   const session = await getSessionClient();
+  let requestQuery = session
+    .from("demand_requests")
+    .select("id, raw_text, structured_intent, intent_corrections, intent_provider, status, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (!env.demoMode) requestQuery = requestQuery.eq("is_demo", false);
   const [requests, memberships, intents, notifications] = await Promise.all([
-    session
-      .from("demand_requests")
-      .select("id, raw_text, structured_intent, intent_corrections, intent_provider, status, created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false }),
+    requestQuery,
     session.from("cluster_memberships").select("cluster_id, joined_at").eq("user_id", userId).order("joined_at", { ascending: false }),
     session.from("purchase_intents").select("cluster_id, level, target_price_cents, maximum_price_cents, status").eq("user_id", userId),
     session.from("notifications").select("id, type, payload, read_at, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(10),
@@ -57,8 +61,13 @@ export async function loadDashboard(userId: string): Promise<DashboardData> {
   if (links.error) dbFail("dashboard links failed", links.error);
 
   const clusterIds = [...new Set([...(memberships.data ?? []).map((m) => m.cluster_id), ...(links.data ?? []).map((l) => l.cluster_id)])];
+  let clusterQuery = db.from("demand_clusters")
+    .select("id, slug, title, status, is_demo, metrics_cache, metrics_refreshed_at")
+    .in("id", clusterIds)
+    .not("status", "in", `(${HIDDEN_FROM_DISCOVERY.join(",")})`);
+  if (!env.demoMode) clusterQuery = clusterQuery.eq("is_demo", false);
   const clusters = clusterIds.length
-    ? await db.from("demand_clusters").select("id, slug, title, status, is_demo, metrics_cache, metrics_refreshed_at").in("id", clusterIds)
+    ? await clusterQuery
     : { data: [], error: null };
   if (clusters.error) dbFail("dashboard clusters failed", clusters.error);
   const byId = new Map((clusters.data ?? []).map((c) => [c.id, c]));

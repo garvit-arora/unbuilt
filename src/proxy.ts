@@ -6,10 +6,12 @@ import { NextResponse, type NextRequest } from "next/server";
  * protected pages. It makes no authorization decisions; every handler and service checks again.
  */
 
-const PROTECTED_PREFIXES = ["/dashboard", "/payments", "/builder", "/admin", "/wish"];
-
 function isProtectedPath(pathname: string): boolean {
-  return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  const protectedPrefixes = [
+    "/admin", "/builder", "/dashboard", "/demand", "/discover", "/docs/paypal-sandbox",
+    "/notifications", "/payments", "/products", "/proposals", "/wish",
+  ];
+  return protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 export async function proxy(request: NextRequest) {

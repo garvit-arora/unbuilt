@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { env } from "@/server/config/env";
 
 /**
  * Public demo page of the prepared LocalPilot Starter Kit (design 11, 13 step 6). It is the `demo_url` and
@@ -29,6 +31,7 @@ const STEPS = [
 ];
 
 export default function LocalPilotDemoPage() {
+  if (!env.demoMode) notFound();
   return (
     <article className="mx-auto flex max-w-4xl flex-col gap-10 px-4 py-16 sm:px-6">
       <header className="flex flex-col gap-4">

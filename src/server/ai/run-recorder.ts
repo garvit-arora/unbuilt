@@ -15,6 +15,7 @@ export type AiAgent =
   | "commercial_analyst"
   | "integrity_analyst"
   | "cluster_summarizer"
+  | "wish_researcher"
   | "embedding";
 
 export type AiTargetType = "draft" | "demand_request" | "cluster" | "proposal" | "system";

@@ -2,5 +2,5 @@
 import { ErrorState } from "@/components/layout/error-state";
 
 export default function Error({ error, retry }: { error: unknown; retry: () => void }) {
-  return <ErrorState error={error} retry={retry} what="Transactions" />;
+  return <ErrorState error={error} retry={retry} what="Your payments" />;
 }

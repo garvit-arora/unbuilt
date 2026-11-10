@@ -11,6 +11,7 @@ import { formatCentsShort } from "@/lib/money";
 import { UUID_RE } from "@/lib/schemas/demand";
 import { getOptionalSessionUser } from "@/server/auth/guards";
 import { getProposalDetail } from "@/server/services/builder.service";
+import { integrityService } from "@/server/services/integrity.service";
 
 export const metadata: Metadata = { title: "Proposal" };
 
@@ -24,6 +25,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
   const detail = await getProposalDetail(id, viewer);
   if (!detail) notFound();
   const { proposal, cluster, updates, offers, isOwner } = detail;
+  const integrity = viewer && isOwner ? await integrityService.latest(viewer, proposal.id) : null;
   const liveOffers = offers.filter((o) => o.availabilityStatus !== "retired");
 
   return (
@@ -172,6 +174,8 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
                 },
               }))}
             canCreateOffer={proposal.status !== "withdrawn" && liveOffers.length === 0}
+            requirements={cluster ? [...cluster.requirements.required, ...cluster.requirements.niceToHave].map((item) => item.title) : []}
+            integrityReport={integrity ? { id: integrity.id, status: integrity.status, score: integrity.score } : null}
           />
         ) : (
           <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-5 text-sm text-muted-text">

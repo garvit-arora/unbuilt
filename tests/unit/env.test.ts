@@ -10,6 +10,41 @@ const SUPABASE = {
 
 const PAYPAL = { PAYPAL_CLIENT_ID: "client-id", PAYPAL_CLIENT_SECRET: "client-secret" };
 
+describe("AI provider routing", () => {
+  it("selects Tinker with prompted JSON and the default Inkling model", () => {
+    const env = parseEnv({ LLM_PROVIDER: "tinker", TINKER_API_KEY: "tinker-test-key" });
+    expect(env.aiMode).toBe("llm");
+    expect(env.llm).toMatchObject({ provider: "tinker", model: "thinkingmachines/Inkling", jsonMode: "none", maxTokens: 4096 });
+    expect(env.llm.baseUrl).toBe("https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1");
+    expect(env.llm.inputCostPerMTok).toBeUndefined();
+  });
+
+  it("requires both OpenRouter key and model to configure fallback", () => {
+    expect(parseEnv({ LLM_PROVIDER: "tinker", OPENROUTER_API_KEY: "or-key" }).llm.fallback).toBeUndefined();
+    const env = parseEnv({ LLM_PROVIDER: "tinker", OPENROUTER_API_KEY: "or-key", OPENROUTER_MODEL: "provider/model" });
+    expect(env.aiMode).toBe("llm");
+    expect(env.llm.fallback).toMatchObject({ provider: "openrouter", model: "provider/model", baseUrl: "https://openrouter.ai/api/v1" });
+  });
+
+  it("can use OpenRouter as primary without repeating it as fallback", () => {
+    const env = parseEnv({ LLM_PROVIDER: "openrouter", OPENROUTER_API_KEY: "or-key", OPENROUTER_MODEL: "provider/model" });
+    expect(env.llm.provider).toBe("openrouter");
+    expect(env.llm.fallback).toBeUndefined();
+    expect(env.aiMode).toBe("llm");
+  });
+
+  it("never sends a Tinker key to an embedding endpoint", () => {
+    const env = parseEnv({ LLM_PROVIDER: "tinker", TINKER_API_KEY: "tinker-test-key", EMBEDDING_MODEL: "embedding-model" });
+    expect(env.embedding.apiKey).toBeUndefined();
+    expect(env.embeddingMode).toBe("local-only");
+  });
+
+  it("keeps the force-fallback test switch effective with both providers configured", () => {
+    const env = parseEnv({ LLM_PROVIDER: "tinker", TINKER_API_KEY: "tinker-test-key", OPENROUTER_API_KEY: "or-key", OPENROUTER_MODEL: "provider/model", UNBUILT_FORCE_FALLBACKS: "1" });
+    expect(env.aiMode).toBe("fallback");
+  });
+});
+
 describe("parseEnv: missing credentials", () => {
   it("never throws on an empty environment and switches capabilities off", () => {
     const env = parseEnv({});

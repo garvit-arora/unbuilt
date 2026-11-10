@@ -17,6 +17,10 @@ export const SignUpSchema = z.object({
 export type SignInInput = z.infer<typeof SignInSchema>;
 export type SignUpInput = z.infer<typeof SignUpSchema>;
 
+/** Self-service account roles. Admin privileges cannot be requested here. */
+export const RoleChangeSchema = z.object({ role: z.enum(["buyer", "builder"]) }).strict();
+export type AccountRole = z.infer<typeof RoleChangeSchema>["role"];
+
 export const DEMO_ACCOUNTS = [
   { role: "buyer", email: "buyer@unbuilt.demo", label: "Sign in as demo buyer" },
   { role: "builder", email: "builder@unbuilt.demo", label: "Sign in as demo builder" },
