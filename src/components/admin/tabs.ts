@@ -6,6 +6,7 @@ export const ADMIN_TABS = [
   { id: "transactions", label: "Transactions" },
   { id: "refunds", label: "Refunds" },
   { id: "ai-runs", label: "AI runs" },
+  { id: "paypal-copilot", label: "PayPal AI" },
   { id: "health", label: "Health" },
 ] as const;
 

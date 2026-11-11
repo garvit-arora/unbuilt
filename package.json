@@ -23,6 +23,7 @@
     "check:env": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/check-env.ts"
   },
   "dependencies": {
+    "@paypal/agent-toolkit": "^1.11.0",
     "@paypal/react-paypal-js": "^10.6.1",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",

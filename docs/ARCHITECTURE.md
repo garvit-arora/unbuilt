@@ -188,6 +188,14 @@ stateDiagram-v2
 - **Refunds**: buyers request; an admin approves (sends the PayPal refund) or rejects; admins can also issue. Eligibility checks the window, remaining amount and open refunds. A refund PayPal did not confirm stays `PENDING` and is retried with the same request id.
 - **Delivery**: the deliverable is revealed only to buyers with a payment in `CAPTURED_STATES`, through an allow-listed file key.
 
+### PayPal Operations Copilot (isolated, read-only)
+
+`src/server/paypal-agent/toolkit.ts` is the only adapter to the official `@paypal/agent-toolkit`. Its fixed configuration enables `orders.get`, `payments.getRefunds`, and `transactions.list`; no mutation action is registered. `POST /api/admin/paypal-copilot` is admin-only, CSRF-protected, and separately rate-limited.
+
+The toolkit response passes through an operational-field allowlist before `paypal-operations-copilot.service.ts` sends it to the configured LLM. Payer, email, name, address, shipping, phone, and recipient fields are discarded. The LLM produces an explanation and recommendation only. If AI is unavailable, a deterministic status summary is returned. Every inspection writes an audit entry containing a hash of the resource ID rather than the raw identifier.
+
+This module has no import path into checkout, capture, refund, webhook, or reconciliation services. Those existing services remain the only financial mutation paths.
+
 ## 7. Security and RLS
 
 - RLS on every table. The anon key can read only public projections: visible clusters, features (without `created_by`), blueprints, proposals (not withdrawn), published offers, build updates, public profile columns (never `role`, `is_demo`, `trust_weight`), product reviews (never `buyer_id`, `payment_id`).

@@ -16,6 +16,7 @@ export type AiAgent =
   | "integrity_analyst"
   | "cluster_summarizer"
   | "wish_researcher"
+  | "paypal_operations_copilot"
   | "embedding";
 
 export type AiTargetType = "draft" | "demand_request" | "cluster" | "proposal" | "system";

@@ -6,6 +6,7 @@ import { isAdminTab, type AdminTabId } from "@/components/admin/tabs";
 import { ClusterAdmin } from "@/components/admin/cluster-admin";
 import { FlagList } from "@/components/admin/flag-list";
 import { ProposalReview } from "@/components/admin/proposal-review";
+import { PayPalOperationsCopilot } from "@/components/admin/paypal-operations-copilot";
 import { RefundQueue } from "@/components/admin/refund-queue";
 import { TransactionsTable } from "@/components/admin/transactions-table";
 import { AiActionButton } from "@/components/demand/ai-action-button";
@@ -184,6 +185,7 @@ export default async function AdminPage({ searchParams }: Props) {
         )}
       </div>
     ),
+    "paypal-copilot": <PayPalOperationsCopilot configured={env.paypal.configured && env.paypal.env === "sandbox"} />,
     health: (
       <div className="grid gap-6 lg:grid-cols-2" data-testid="admin-health">
         <section className="rounded-xl border border-line bg-surface p-5">
